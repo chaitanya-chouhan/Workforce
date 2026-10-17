@@ -3,7 +3,18 @@ import path from 'path';
 import fs from 'fs';
 import dotenv from 'dotenv';
 
-dotenv.config();
+const envCandidates = [
+  path.resolve(process.cwd(), '.env'),
+  path.resolve(process.cwd(), 'backend', '.env'),
+  path.resolve(__dirname, '../../.env'),
+];
+for (const envFile of envCandidates) {
+  if (fs.existsSync(envFile)) {
+    dotenv.config({ path: envFile });
+    break;
+  }
+}
+dotenv.config(); // fallback default
 
 let db: FirebaseFirestore.Firestore | null = null;
 let auth: admin.auth.Auth | null = null;
@@ -19,7 +30,14 @@ export function initializeFirebaseAdmin(): { configured: boolean; error: string 
   }
 
   try {
-    const credPath = process.env.GOOGLE_APPLICATION_CREDENTIALS || path.resolve(process.cwd(), 'serviceAccountKey.json');
+    const candidatePaths = [
+      process.env.GOOGLE_APPLICATION_CREDENTIALS,
+      path.resolve(process.cwd(), 'serviceAccountKey.json'),
+      path.resolve(process.cwd(), 'backend', 'serviceAccountKey.json'),
+      path.resolve(__dirname, '../../serviceAccountKey.json'),
+    ].filter(Boolean) as string[];
+
+    const credPath = candidatePaths.find(p => fs.existsSync(p)) || path.resolve(process.cwd(), 'serviceAccountKey.json');
     const projectId = process.env.FIREBASE_PROJECT_ID;
     const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
     const privateKey = process.env.FIREBASE_PRIVATE_KEY
