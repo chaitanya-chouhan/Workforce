@@ -1,0 +1,21 @@
+{
+  "name": "workforce-root",
+  "version": "1.0.0",
+  "description": "WorkForce - AI-Powered Local Service Platform (Firebase & Gemma 4)",
+  "private": true,
+  "scripts": {
+    "install:all": "npm --prefix backend install && npm --prefix frontend install",
+    "test:backend": "npm --prefix backend test",
+    "build:frontend": "npm --prefix frontend run build",
+    "build:backend": "npm --prefix backend run build",
+    "dev:backend": "npm --prefix backend run dev",
+    "dev:frontend": "npm --prefix frontend run dev"
+  },
+  "keywords": [
+    "workforce",
+    "gemma4",
+    "firebase"
+  ],
+  "author": "",
+  "license": "ISC"
+}

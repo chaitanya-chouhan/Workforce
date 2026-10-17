@@ -1,0 +1,137 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() && getUserData().role == 'ADMIN';
+    }
+
+    function isWorker() {
+      return isAuthenticated() && getUserData().role == 'WORKER';
+    }
+
+    function isCustomer() {
+      return isAuthenticated() && getUserData().role == 'CUSTOMER';
+    }
+
+    // Default deny all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // 1. Users collection
+    // Users can read their own profile; admins can read all; workers/customers can view basic profile info for assigned tasks
+    match /users/{userId} {
+      allow read: if isAuthenticated() && (request.auth.uid == userId || isAdmin() || isWorker() || isCustomer());
+      // Only user can create their own profile during initial registration (cannot self-assign ADMIN)
+      allow create: if isOwner(userId) && request.resource.data.role != 'ADMIN';
+      // User can update only non-critical fields (cannot modify role or accountStatus directly)
+      allow update: if (isOwner(userId) && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'accountStatus', 'uid', 'email']))
+                    || isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // 2. Worker Profiles
+    match /workerProfiles/{workerId} {
+      allow read: if isAuthenticated();
+      // Workers can update bio, experience, rates, service area, availability; cannot change verificationStatus, rating, or completed counts
+      allow create: if isOwner(workerId) && request.resource.data.verificationStatus == 'PENDING';
+      allow update: if (isOwner(workerId) && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['verificationStatus', 'averageRating', 'completedJobsCount', 'activeAssignmentCount']))
+                    || isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // 3. Skills Catalog (Publicly readable by authenticated users, manageable by admin or backend)
+    match /skills/{skillId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    // 4. Rate Cards (Sample rate cards readable by authenticated users, editable by admin only)
+    match /rateCards/{rateCardId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    // 5. Service Requests
+    match /serviceRequests/{requestId} {
+      // Customer can read own requests; Workers can read if open for workers or assigned; Admin can read all
+      allow read: if isAuthenticated() && (
+        resource.data.customerId == request.auth.uid ||
+        isAdmin() ||
+        (isWorker() && resource.data.status in ['OPEN_FOR_WORKERS', 'AWAITING_ASSIGNMENT_CONFIRMATION', 'ASSIGNED', 'IN_PROGRESS', 'COMPLETION_PENDING_CONFIRMATION', 'COMPLETED'])
+      );
+      // Only backend handles sensitive state transitions; clients cannot directly change status to ASSIGNED or COMPLETED
+      allow create: if isCustomer() && request.resource.data.customerId == request.auth.uid;
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // 6. AI Analyses (Backend only writes AI analyses; customer and assigned worker can read)
+    match /aiAnalyses/{analysisId} {
+      allow read: if isAuthenticated() && (
+        resource.data.customerId == request.auth.uid ||
+        isAdmin() ||
+        isWorker()
+      );
+      // AI analysis must be written by backend Admin SDK only
+      allow write: if isAdmin();
+    }
+
+    // 7. Task Interests (Workers express interest in open tasks)
+    match /taskInterests/{interestId} {
+      allow read: if isAuthenticated();
+      allow create: if isWorker() && request.resource.data.workerId == request.auth.uid;
+      allow update: if (isWorker() && resource.data.workerId == request.auth.uid) || isAdmin();
+      allow delete: if (isWorker() && resource.data.workerId == request.auth.uid) || isAdmin();
+    }
+
+    // 8. Assignments
+    // Note: otpHash is stored here or in private sub-collection; client rules NEVER allow reading otpHash!
+    match /assignments/{assignmentId} {
+      // Customers & assigned workers can read assignment status, but NEVER otpHash
+      allow read: if isAuthenticated() && (
+        resource.data.customerId == request.auth.uid ||
+        resource.data.workerId == request.auth.uid ||
+        isAdmin()
+      );
+      // Assignment creation, OTP generation, and OTP verification must be processed securely by Backend Admin SDK
+      allow write: if isAdmin();
+    }
+
+    // 9. In-app Notifications
+    match /notifications/{notificationId} {
+      allow read: if isAuthenticated() && resource.data.recipientUid == request.auth.uid;
+      allow update: if isAuthenticated() && resource.data.recipientUid == request.auth.uid
+                    && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read']);
+      allow write: if isAdmin();
+    }
+
+    // 10. Feedback
+    match /feedback/{feedbackId} {
+      allow read: if isAuthenticated();
+      // Feedback can be submitted by customer for their completed task
+      allow create: if isCustomer() && request.resource.data.customerId == request.auth.uid;
+      allow update, delete: if isAdmin();
+    }
+
+    // 11. Worker Verifications (Admin only)
+    match /workerVerifications/{verificationId} {
+      allow read: if isAdmin() || (isWorker() && resource.data.workerId == request.auth.uid);
+      allow write: if isAdmin();
+    }
+  }
+}
