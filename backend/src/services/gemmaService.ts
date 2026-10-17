@@ -47,26 +47,28 @@ export class GemmaService {
   constructor() {
     this.apiKey = process.env.GOOGLE_API_KEY;
     this.modelId = process.env.GEMMA_MODEL || 'gemma-4-26b-a4b-it';
+  }
 
-    if (this.apiKey && this.apiKey.trim().length > 0 && this.apiKey !== 'your_google_ai_studio_api_key_here') {
-      try {
-        this.client = new GoogleGenAI({ apiKey: this.apiKey });
-      } catch (err: any) {
-        console.warn(`[GemmaService] Failed to initialize GoogleGenAI: ${err.message}`);
-      }
+  public getClient(): GoogleGenAI | null {
+    const key = process.env.GOOGLE_API_KEY;
+    if (!key || key.trim().length === 0 || key === 'your_google_ai_studio_api_key_here') {
+      this.client = null;
+      this.apiKey = undefined;
+      return null;
     }
+    if (!this.client || this.apiKey !== key) {
+      this.apiKey = key;
+      this.client = new GoogleGenAI({ apiKey: key });
+    }
+    return this.client;
   }
 
   public getModelId(): string {
-    return this.modelId;
+    return process.env.GEMMA_MODEL || this.modelId || 'gemma-4-26b-a4b-it';
   }
 
   public isConfigured(): boolean {
-    return (
-      this.client !== null &&
-      Boolean(this.apiKey) &&
-      this.apiKey !== 'your_google_ai_studio_api_key_here'
-    );
+    return this.getClient() !== null;
   }
 
   /**
@@ -78,17 +80,20 @@ export class GemmaService {
     message: string;
     availableGemmaModels?: string[];
   }> {
-    if (!this.isConfigured() || !this.client) {
+    const client = this.getClient();
+    const currentModelId = this.getModelId();
+
+    if (!client) {
       return {
         available: false,
-        configuredModel: this.modelId,
+        configuredModel: currentModelId,
         message: 'Google GenAI API key is missing or not configured. Set GOOGLE_API_KEY in backend/.env',
       };
     }
 
     try {
       // Query models list
-      const listRes = await this.client.models.list();
+      const listRes = await client.models.list();
       const modelsList: string[] = [];
       let foundConfigured = false;
       const gemmaModels: string[] = [];
@@ -99,7 +104,7 @@ export class GemmaService {
         if (id.toLowerCase().includes('gemma')) {
           gemmaModels.push(id);
         }
-        if (id === this.modelId) {
+        if (id === currentModelId) {
           foundConfigured = true;
         }
       }
@@ -107,22 +112,22 @@ export class GemmaService {
       if (foundConfigured) {
         return {
           available: true,
-          configuredModel: this.modelId,
-          message: `Model ${this.modelId} is supported and active on this API key.`,
+          configuredModel: currentModelId,
+          message: `Model ${currentModelId} is supported and active on this API key.`,
           availableGemmaModels: gemmaModels,
         };
       }
 
       return {
         available: false,
-        configuredModel: this.modelId,
-        message: `Model ${this.modelId} was not found in the model list for this account. Available Gemma models: [${gemmaModels.join(', ') || 'None found'}]. You can adjust GEMMA_MODEL in backend/.env.`,
+        configuredModel: currentModelId,
+        message: `Model ${currentModelId} was not found in the model list for this account. Available Gemma models: [${gemmaModels.join(', ') || 'None found'}]. You can adjust GEMMA_MODEL in backend/.env.`,
         availableGemmaModels: gemmaModels,
       };
     } catch (err: any) {
       return {
         available: false,
-        configuredModel: this.modelId,
+        configuredModel: currentModelId,
         message: `Error verifying model access: ${err.message}`,
       };
     }
@@ -137,7 +142,9 @@ export class GemmaService {
     const safety: SafetyEvaluation = evaluateSafety(input.description, input.category);
 
     // If API key is not configured, give an honest, un-fabricated explanation
-    if (!this.isConfigured() || !this.client) {
+    const client = this.getClient();
+    const modelId = this.getModelId();
+    if (!client) {
       throw new Error(
         'Google GenAI API key (GOOGLE_API_KEY) is not configured in backend/.env. Please configure your API key from Google AI Studio to run real Gemma 4 analysis.'
       );
@@ -196,8 +203,8 @@ Locality: ${input.locality || 'Not specified'}`;
 
     let responseText = '';
     try {
-      const response = await this.client.models.generateContent({
-        model: this.modelId,
+      const response = await client.models.generateContent({
+        model: modelId,
         contents,
         config: {
           temperature: 0.2, // Low temperature for consistent structured reasoning
@@ -206,8 +213,8 @@ Locality: ${input.locality || 'Not specified'}`;
 
       responseText = response.text || '';
     } catch (err: any) {
-      console.error(`[GemmaService] API call failed on model ${this.modelId}:`, err);
-      throw new Error(`Gemma 4 API error (${this.modelId}): ${err.message}`);
+      console.error(`[GemmaService] API call failed on model ${modelId}:`, err);
+      throw new Error(`Gemma 4 API error (${modelId}): ${err.message}`);
     }
 
     if (!responseText.trim()) {

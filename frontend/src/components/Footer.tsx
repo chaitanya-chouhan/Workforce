@@ -36,6 +36,7 @@ export const Footer: React.FC = () => {
               <li><Link to="/about" className="hover:text-white transition-colors">About Gemma 4 & Architecture</Link></li>
               <li><Link to="/register" className="hover:text-white transition-colors">Become a Service Provider</Link></li>
               <li><Link to="/register" className="hover:text-white transition-colors">Request a Household Repair</Link></li>
+              <li><Link to="/admin/login" className="hover:text-white transition-colors text-slate-400">Administrator Console</Link></li>
             </ul>
           </div>
 

@@ -36,7 +36,7 @@ export function scoreWorkerForRequest(
 ): ScoredWorker | null {
   // 1. Mandatory eligibility checks
   if (worker.availabilityStatus !== 'AVAILABLE') return null;
-  if (worker.verificationStatus !== 'VERIFIED') return null;
+  if (worker.verificationStatus !== 'VERIFIED' && worker.verificationStatus !== 'APPROVED') return null;
   if (worker.activeAssignmentCount >= MAX_ACTIVE_ASSIGNMENTS) return null;
 
   const normalizedRequired = requiredSkills.map(s => normalizeSkillKey(s));
@@ -128,15 +128,31 @@ export async function findMatchingWorkers(
   if (isFirebaseAdminConfigured()) {
     try {
       const db = getDb();
-      // Fetch available, verified workers from Firestore
-      const snap = await db
-        .collection('workerProfiles')
-        .where('availabilityStatus', '==', 'AVAILABLE')
-        .where('verificationStatus', '==', 'VERIFIED')
-        .get();
+      // Fetch worker profiles safely from Firestore
+      const snap = await db.collection('workerProfiles').get();
 
       for (const doc of snap.docs) {
-        allWorkers.push({ userId: doc.id, ...(doc.data() as Omit<WorkerProfile, 'userId'>) });
+        const data = doc.data() as Omit<WorkerProfile, 'userId'>;
+        let workerName = data.name;
+        if (!workerName) {
+          try {
+            const userDoc = await db.collection('users').doc(doc.id).get();
+            if (userDoc.exists) {
+              workerName = userDoc.data()?.name;
+            }
+          } catch {
+            // fallback
+          }
+        }
+
+        allWorkers.push({
+          userId: doc.id,
+          ...data,
+          name: workerName || 'Local Technician',
+          availabilityStatus: data.availabilityStatus || 'AVAILABLE',
+          averageRating: typeof data.averageRating === 'number' ? data.averageRating : 5.0,
+          completedJobsCount: data.completedJobsCount || 0,
+        });
       }
     } catch (err) {
       console.warn('[Matching] Firestore query failed, falling back:', err);

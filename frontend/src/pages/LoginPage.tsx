@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { Wrench, Lock, Mail, AlertCircle, ArrowRight } from 'lucide-react';
+import { Wrench, Shield, Lock, Mail, AlertCircle, ArrowRight } from 'lucide-react';
 
 export const LoginPage: React.FC = () => {
   const [email, setEmail] = useState('');
@@ -12,6 +12,8 @@ export const LoginPage: React.FC = () => {
   const { login, firebaseConfigured } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
+
+  const isAdminLogin = location.pathname.includes('/admin');
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -53,11 +55,21 @@ export const LoginPage: React.FC = () => {
     <div className="min-h-[80vh] flex items-center justify-center px-4 py-12">
       <div className="max-w-md w-full bg-white rounded-3xl shadow-xl border border-slate-200 p-8 space-y-6">
         <div className="text-center space-y-2">
-          <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-brand-600 to-indigo-600 flex items-center justify-center text-white mx-auto shadow-md shadow-brand-500/20">
-            <Wrench className="w-6 h-6" />
+          <div className={`w-12 h-12 rounded-2xl flex items-center justify-center text-white mx-auto shadow-md ${
+            isAdminLogin
+              ? 'bg-gradient-to-tr from-slate-900 to-indigo-900 shadow-slate-900/20'
+              : 'bg-gradient-to-tr from-brand-600 to-indigo-600 shadow-brand-500/20'
+          }`}>
+            {isAdminLogin ? <Shield className="w-6 h-6 text-brand-400" /> : <Wrench className="w-6 h-6" />}
           </div>
-          <h2 className="text-2xl font-black text-slate-900 tracking-tight">Sign in to WorkForce</h2>
-          <p className="text-xs text-slate-500">Access your customer or service provider portal</p>
+          <h2 className="text-2xl font-black text-slate-900 tracking-tight">
+            {isAdminLogin ? 'Administrator Console' : 'Sign in to WorkForce'}
+          </h2>
+          <p className="text-xs text-slate-500">
+            {isAdminLogin
+              ? 'Authorized personnel only — identity compliance and governance'
+              : 'Access your customer or service provider portal'}
+          </p>
         </div>
 
         {!firebaseConfigured && (

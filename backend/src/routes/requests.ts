@@ -3,7 +3,7 @@ import multer from 'multer';
 import { z } from 'zod';
 import { getDb } from '../config/firebase';
 import { authenticateToken } from '../middleware/authMiddleware';
-import { requireRole } from '../middleware/roleMiddleware';
+import { requireRole, requireActiveAccount } from '../middleware/roleMiddleware';
 import { ServiceRequest, AIAnalysis, CostEstimate } from '../types';
 import { gemmaService } from '../services/gemmaService';
 import { getRateCardForSkill, calculateEstimate } from '../services/costEstimationService';
@@ -39,7 +39,7 @@ const createRequestSchema = z.object({
 
 // POST /api/requests
 // Create a new service request
-router.post('/', authenticateToken, requireRole('CUSTOMER'), async (req: Request, res: Response) => {
+router.post('/', authenticateToken, requireRole('CUSTOMER'), requireActiveAccount, async (req: Request, res: Response) => {
   try {
     const parse = createRequestSchema.safeParse(req.body);
     if (!parse.success) {
@@ -54,7 +54,7 @@ router.post('/', authenticateToken, requireRole('CUSTOMER'), async (req: Request
     const newRequest: ServiceRequest = {
       id: docRef.id,
       customerId: req.user!.uid,
-      customerName: req.user!.name,
+      ...(req.user!.name ? { customerName: req.user!.name } : {}),
       title: parse.data.title,
       description: parse.data.description,
       category: parse.data.category || 'General',
@@ -62,7 +62,9 @@ router.post('/', authenticateToken, requireRole('CUSTOMER'), async (req: Request
       district: parse.data.district,
       state: parse.data.state,
       urgency: parse.data.urgency,
-      preferredTime: parse.data.preferredTime,
+      ...(parse.data.preferredTime && parse.data.preferredTime.trim().length > 0
+        ? { preferredTime: parse.data.preferredTime.trim() }
+        : {}),
       status: 'SUBMITTED',
       createdAt: now,
       updatedAt: now,
@@ -140,7 +142,7 @@ router.get('/:id', authenticateToken, async (req: Request, res: Response) => {
       }
     }
 
-    // Fetch Task Interests
+    // Fetch Task Interests with full worker profile details
     const interestsSnap = await db
       .collection('taskInterests')
       .where('requestId', '==', id)
@@ -148,7 +150,40 @@ router.get('/:id', authenticateToken, async (req: Request, res: Response) => {
 
     const interestedWorkers: any[] = [];
     for (const iDoc of interestsSnap.docs) {
-      interestedWorkers.push({ id: iDoc.id, ...iDoc.data() });
+      const iData = iDoc.data();
+      let workerName = iData.workerName;
+      let averageRating = 5.0;
+      let skills: string[] = [];
+      let completedJobsCount = 0;
+      let serviceArea = '';
+
+      if (iData.workerId) {
+        const wpDoc = await db.collection('workerProfiles').doc(iData.workerId).get();
+        if (wpDoc.exists) {
+          const wpData = wpDoc.data();
+          if (wpData?.name) workerName = wpData.name;
+          if (typeof wpData?.averageRating === 'number') averageRating = wpData.averageRating;
+          if (Array.isArray(wpData?.skills)) skills = wpData.skills;
+          if (typeof wpData?.completedJobsCount === 'number') completedJobsCount = wpData.completedJobsCount;
+          if (wpData?.serviceArea) serviceArea = wpData.serviceArea;
+        }
+        if (!workerName || workerName === iData.workerId) {
+          const uDoc = await db.collection('users').doc(iData.workerId).get();
+          if (uDoc.exists && uDoc.data()?.name) {
+            workerName = uDoc.data()!.name;
+          }
+        }
+      }
+
+      interestedWorkers.push({
+        id: iDoc.id,
+        ...iData,
+        workerName: workerName || 'Local Technician',
+        workerRating: averageRating,
+        workerSkills: skills,
+        workerCompletedJobsCount: completedJobsCount,
+        workerServiceArea: serviceArea,
+      });
     }
 
     // Fetch Active Assignment if any
@@ -162,9 +197,20 @@ router.get('/:id', authenticateToken, async (req: Request, res: Response) => {
     if (!assignmentSnap.empty) {
       const aDoc = assignmentSnap.docs[0];
       const aData = aDoc.data();
+      let workerName = aData.workerName;
+      if (!workerName || workerName === aData.workerId) {
+        const uDoc = await db.collection('users').doc(aData.workerId).get();
+        if (uDoc.exists && uDoc.data()?.name) {
+          workerName = uDoc.data()!.name;
+        }
+      }
       // Omit otpHash for safety
       const { otpHash, ...safeAssignment } = aData;
-      assignment = { id: aDoc.id, ...safeAssignment };
+      assignment = {
+        id: aDoc.id,
+        ...safeAssignment,
+        workerName: workerName || 'Assigned Worker',
+      };
     }
 
     res.json({
@@ -185,6 +231,7 @@ router.post(
   '/:id/analyze',
   authenticateToken,
   requireRole('CUSTOMER'),
+  requireActiveAccount,
   upload.single('image'),
   async (req: Request, res: Response) => {
     try {
@@ -259,9 +306,9 @@ router.post(
         basicChecks: aiResult.basicChecks,
         safetyWarnings: aiResult.safetyWarnings,
         requiresProfessional: aiResult.requiresProfessional,
-        inspectionQuestions: aiResult.inspectionQuestions,
-        estimatedCostCategory: aiResult.estimatedCostCategory,
-        costEstimate,
+        inspectionQuestions: aiResult.inspectionQuestions || [],
+        ...(aiResult.estimatedCostCategory ? { estimatedCostCategory: aiResult.estimatedCostCategory } : {}),
+        ...(costEstimate ? { costEstimate } : {}),
         createdAt: now,
       };
 
@@ -324,5 +371,137 @@ router.post('/:id/cancel', authenticateToken, requireRole('CUSTOMER'), async (re
     res.status(500).json({ success: false, error: err.message });
   }
 });
+
+// POST /api/requests/:id/interests/:workerId/decline
+// Customer explicitly declines/cancels an interest expressed by a worker
+router.post(
+  '/:id/interests/:workerId/decline',
+  authenticateToken,
+  requireRole('CUSTOMER'),
+  requireActiveAccount,
+  async (req: Request, res: Response) => {
+    try {
+      const { id: requestId, workerId } = req.params;
+      const db = getDb();
+
+      const reqDoc = await db.collection('serviceRequests').doc(requestId).get();
+      if (!reqDoc.exists) {
+        res.status(404).json({ success: false, error: 'Service request not found' });
+        return;
+      }
+
+      const requestData = reqDoc.data() as ServiceRequest;
+      if (requestData.customerId !== req.user!.uid && req.user!.role !== 'ADMIN') {
+        res.status(403).json({ success: false, error: 'You do not own this service request' });
+        return;
+      }
+
+      const interestQuery = await db
+        .collection('taskInterests')
+        .where('requestId', '==', requestId)
+        .where('workerId', '==', workerId)
+        .get();
+
+      if (interestQuery.empty) {
+        res.status(404).json({ success: false, error: 'No interest record found for this worker' });
+        return;
+      }
+
+      const now = new Date().toISOString();
+      const batch = db.batch();
+
+      for (const doc of interestQuery.docs) {
+        batch.update(doc.ref, {
+          status: 'REJECTED',
+          updatedAt: now,
+        });
+      }
+
+      // Notify the worker politely
+      const notifRef = db.collection('notifications').doc();
+      batch.set(notifRef, {
+        id: notifRef.id,
+        recipientUid: workerId,
+        type: 'INTEREST_EXPRESSED',
+        title: 'Task Interest Update',
+        message: `The customer has chosen another technician or declined interest for "${requestData.title}".`,
+        requestId,
+        read: false,
+        createdAt: now,
+      });
+
+      await batch.commit();
+
+      res.json({ success: true, message: 'Worker interest declined.' });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  }
+);
+
+// POST /api/requests/:id/cancel-assignment
+// Allows customer to cancel a pending OTP assignment and choose a different worker
+router.post(
+  '/:id/cancel-assignment',
+  authenticateToken,
+  requireRole('CUSTOMER'),
+  requireActiveAccount,
+  async (req: Request, res: Response) => {
+    try {
+      const { id: requestId } = req.params;
+      const db = getDb();
+
+      const reqDoc = await db.collection('serviceRequests').doc(requestId).get();
+      if (!reqDoc.exists) {
+        res.status(404).json({ success: false, error: 'Service request not found' });
+        return;
+      }
+
+      const requestData = reqDoc.data() as ServiceRequest;
+      if (requestData.customerId !== req.user!.uid && req.user!.role !== 'ADMIN') {
+        res.status(403).json({ success: false, error: 'You do not own this service request' });
+        return;
+      }
+
+      if (requestData.status === 'COMPLETED' || requestData.status === 'IN_PROGRESS') {
+        res.status(400).json({
+          success: false,
+          error: `Cannot cancel assignment when task is already ${requestData.status}.`,
+        });
+        return;
+      }
+
+      const assignSnap = await db
+        .collection('assignments')
+        .where('requestId', '==', requestId)
+        .where('status', 'in', ['PENDING_OTP', 'CONFIRMED'])
+        .get();
+
+      const now = new Date().toISOString();
+      const batch = db.batch();
+
+      for (const aDoc of assignSnap.docs) {
+        batch.update(aDoc.ref, {
+          status: 'CANCELLED',
+          updatedAt: now,
+        });
+      }
+
+      // Reset request status to OPEN_FOR_WORKERS so customer can select another worker
+      batch.update(reqDoc.ref, {
+        status: 'OPEN_FOR_WORKERS',
+        assignedWorkerId: null,
+        assignedWorkerName: null,
+        updatedAt: now,
+      });
+
+      await batch.commit();
+
+      res.json({ success: true, message: 'Assignment cancelled. You can now select another worker.' });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  }
+);
 
 export default router;

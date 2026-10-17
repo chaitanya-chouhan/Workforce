@@ -1,7 +1,7 @@
 export type UserRole = 'CUSTOMER' | 'WORKER' | 'ADMIN';
-export type AccountStatus = 'ACTIVE' | 'SUSPENDED' | 'PENDING';
+export type AccountStatus = 'ACTIVE' | 'SUSPENDED' | 'BANNED' | 'PENDING';
 export type AvailabilityStatus = 'AVAILABLE' | 'UNAVAILABLE';
-export type VerificationStatus = 'PENDING' | 'VERIFIED' | 'REJECTED';
+export type VerificationStatus = 'PENDING' | 'VERIFIED' | 'APPROVED' | 'REJECTED' | 'RESUBMISSION_REQUIRED';
 
 export type RequestStatus =
   | 'DRAFT'
@@ -30,6 +30,10 @@ export interface User {
   role: UserRole;
   phone?: string;
   accountStatus: AccountStatus;
+  banReason?: string;
+  bannedAt?: string;
+  bannedBy?: string;
+  mustChangePassword?: boolean;
   locality?: string;
   district?: string;
   state?: string;
@@ -45,6 +49,7 @@ export interface WorkerProfile {
   bio: string;
   experienceYears: number;
   skills: string[];
+  serviceCategories?: string[];
   indicativeRates?: {
     hourlyRate?: number;
     minimumVisitFee?: number;
@@ -53,11 +58,80 @@ export interface WorkerProfile {
   serviceRadiusKm?: number;
   availabilityStatus: AvailabilityStatus;
   verificationStatus: VerificationStatus;
+  verificationNotes?: string;
+  verifiedAt?: string;
+  verifiedBy?: string;
+  identityDocumentId?: string;
+  identityDocumentSubmitted?: boolean;
+  maskedAadhaar?: string;
   averageRating: number;
   completedJobsCount: number;
   activeAssignmentCount: number;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface WorkerDocument {
+  id: string;
+  workerId: string;
+  documentType: 'AADHAAR' | 'GOVT_ID';
+  originalFileName: string;
+  fileSize: number;
+  mimeType: string;
+  storagePath?: string;
+  maskedNumber?: string;
+  uploadedAt: string;
+  verificationStatus: VerificationStatus;
+  verificationNotes?: string;
+}
+
+export type ComplaintStatus = 'OPEN' | 'UNDER_REVIEW' | 'RESOLVED' | 'DISMISSED';
+
+export interface Complaint {
+  id: string;
+  complainantId: string;
+  complainantRole: 'CUSTOMER' | 'WORKER';
+  complainantName: string;
+  targetUserId: string;
+  targetUserRole: 'CUSTOMER' | 'WORKER';
+  targetUserName?: string;
+  requestId?: string;
+  requestTitle?: string;
+  assignmentId?: string;
+  category: string;
+  subject: string;
+  description: string;
+  evidenceFileId?: string;
+  evidenceFileName?: string;
+  evidenceMimeType?: string;
+  evidenceSize?: number;
+  status: ComplaintStatus;
+  adminNotes?: string;
+  resolutionNotes?: string;
+  resolutionReason?: string;
+  reviewedBy?: string;
+  reviewedAt?: string;
+  resolvedAt?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AuditLog {
+  id: string;
+  adminId?: string;
+  adminEmail?: string;
+  actorId?: string;
+  actorEmail?: string;
+  actorRole?: string;
+  action: string;
+  targetType: string;
+  targetId: string;
+  targetName?: string;
+  details?: Record<string, any>;
+  reason?: string;
+  metadata?: Record<string, any>;
+  notes?: string;
+  timestamp: string;
 }
 
 export interface PossibleCause {
@@ -139,7 +213,9 @@ export interface Assignment {
   id: string;
   requestId: string;
   customerId: string;
+  customerName?: string;
   workerId: string;
+  workerName?: string;
   status: AssignmentStatus;
   otpExpiresAt?: string;
   assignedAt?: string;
@@ -174,6 +250,8 @@ export interface Notification {
   createdAt: string;
 }
 
+export type ReviewOption = 'very bad' | 'bad' | 'ok' | 'good' | 'very good';
+
 export interface Feedback {
   id: string;
   requestId: string;
@@ -181,6 +259,7 @@ export interface Feedback {
   customerName?: string;
   workerId: string;
   rating: number;
+  review?: ReviewOption;
   comment: string;
   createdAt: string;
 }

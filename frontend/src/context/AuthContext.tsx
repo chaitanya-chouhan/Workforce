@@ -26,6 +26,13 @@ interface AuthContextType {
     locality?: string;
     district?: string;
     state?: string;
+    skills?: string[];
+    experienceYears?: number;
+    bio?: string;
+    serviceCategories?: string[];
+    serviceArea?: string;
+    hourlyRate?: number;
+    minimumVisitFee?: number;
   }) => Promise<User>;
   logout: () => Promise<void>;
   refreshProfile: () => Promise<void>;
@@ -105,6 +112,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     locality?: string;
     district?: string;
     state?: string;
+    skills?: string[];
+    experienceYears?: number;
+    bio?: string;
+    serviceCategories?: string[];
+    serviceArea?: string;
+    hourlyRate?: number;
+    minimumVisitFee?: number;
   }): Promise<User> => {
     if (!auth) {
       throw new Error('Firebase Auth is not configured. Please supply Firebase credentials in frontend/.env');
@@ -125,6 +139,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       locality: payload.locality,
       district: payload.district,
       state: payload.state,
+      skills: payload.skills,
+      experienceYears: payload.experienceYears,
+      bio: payload.bio,
+      serviceCategories: payload.serviceCategories,
+      serviceArea: payload.serviceArea,
+      hourlyRate: payload.hourlyRate,
+      minimumVisitFee: payload.minimumVisitFee,
     });
 
     if (!regRes.success) {

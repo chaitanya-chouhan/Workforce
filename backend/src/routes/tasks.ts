@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { getDb } from '../config/firebase';
 import { authenticateToken } from '../middleware/authMiddleware';
-import { requireRole } from '../middleware/roleMiddleware';
+import { requireRole, requireActiveAccount } from '../middleware/roleMiddleware';
 import { ServiceRequest, WorkerProfile } from '../types';
 
 const router = Router();
@@ -43,7 +43,7 @@ router.get('/assigned', authenticateToken, requireRole('WORKER'), async (req: Re
 
 // POST /api/tasks/:id/start
 // Worker begins work on an assigned task
-router.post('/:id/start', authenticateToken, requireRole('WORKER'), async (req: Request, res: Response) => {
+router.post('/:id/start', authenticateToken, requireRole('WORKER'), requireActiveAccount, async (req: Request, res: Response) => {
   try {
     const { id: requestId } = req.params;
     const workerUid = req.user!.uid;
@@ -96,7 +96,7 @@ router.post('/:id/start', authenticateToken, requireRole('WORKER'), async (req: 
 
 // POST /api/tasks/:id/complete
 // Worker indicates they have finished the work
-router.post('/:id/complete', authenticateToken, requireRole('WORKER'), async (req: Request, res: Response) => {
+router.post('/:id/complete', authenticateToken, requireRole('WORKER'), requireActiveAccount, async (req: Request, res: Response) => {
   try {
     const { id: requestId } = req.params;
     const workerUid = req.user!.uid;
@@ -149,13 +149,14 @@ router.post('/:id/complete', authenticateToken, requireRole('WORKER'), async (re
 
 // POST /api/tasks/:id/confirm-completion
 // Customer inspects and confirms the work is fully complete
-router.post('/:id/confirm-completion', authenticateToken, requireRole('CUSTOMER'), async (req: Request, res: Response) => {
+router.post('/:id/confirm-completion', authenticateToken, requireRole('CUSTOMER'), requireActiveAccount, async (req: Request, res: Response) => {
   try {
     const { id: requestId } = req.params;
     const customerUid = req.user!.uid;
     const db = getDb();
 
     await db.runTransaction(async transaction => {
+      // 1. ALL READS FIRST (Firestore requirement: all reads before all writes)
       const docRef = db.collection('serviceRequests').doc(requestId);
       const doc = await transaction.get(docRef);
 
@@ -172,28 +173,72 @@ router.post('/:id/confirm-completion', authenticateToken, requireRole('CUSTOMER'
         throw new Error(`Cannot confirm completion on task with status ${data.status}`);
       }
 
+      // Read worker profile upfront BEFORE any writes
+      let workerRef: FirebaseFirestore.DocumentReference | null = null;
+      let workerDoc: FirebaseFirestore.DocumentSnapshot | null = null;
+      if (data.assignedWorkerId) {
+        workerRef = db.collection('workerProfiles').doc(data.assignedWorkerId);
+        workerDoc = await transaction.get(workerRef);
+      }
+
+      // Read assignment doc upfront BEFORE any writes
+      let assignDocRef: FirebaseFirestore.DocumentReference | null = null;
+      if (data.assignedWorkerId) {
+        const assignSnap = await transaction.get(
+          db.collection('assignments')
+            .where('requestId', '==', requestId)
+            .where('workerId', '==', data.assignedWorkerId)
+            .limit(1)
+        );
+        if (!assignSnap.empty) {
+          assignDocRef = assignSnap.docs[0].ref;
+        }
+      }
+
+      // 2. ALL WRITES AFTER ALL READS
       const now = new Date().toISOString();
 
-      // Update task status
+      // Write 1: Update task status
       transaction.update(docRef, {
         status: 'COMPLETED',
         updatedAt: now,
       });
 
-      // Update worker profile counts
-      if (data.assignedWorkerId) {
-        const workerRef = db.collection('workerProfiles').doc(data.assignedWorkerId);
-        const workerDoc = await transaction.get(workerRef);
-        if (workerDoc.exists) {
+      // Write 2: Update assignment status if present
+      if (assignDocRef) {
+        transaction.update(assignDocRef, {
+          status: 'COMPLETED',
+          completedAt: now,
+          updatedAt: now,
+        });
+      }
+
+      // Write 3: Update worker profile counts and restore availability
+      if (workerRef) {
+        if (workerDoc && workerDoc.exists) {
           const wProfile = workerDoc.data() as WorkerProfile;
           transaction.update(workerRef, {
             completedJobsCount: (wProfile.completedJobsCount || 0) + 1,
             activeAssignmentCount: Math.max(0, (wProfile.activeAssignmentCount || 1) - 1),
+            availabilityStatus: 'AVAILABLE',
             updatedAt: now,
           });
+        } else {
+          transaction.set(
+            workerRef,
+            {
+              completedJobsCount: 1,
+              activeAssignmentCount: 0,
+              availabilityStatus: 'AVAILABLE',
+              updatedAt: now,
+            },
+            { merge: true }
+          );
         }
+      }
 
-        // Notify worker
+      // Write 4: Notify worker
+      if (data.assignedWorkerId) {
         const notifRef = db.collection('notifications').doc();
         transaction.set(notifRef, {
           id: notifRef.id,

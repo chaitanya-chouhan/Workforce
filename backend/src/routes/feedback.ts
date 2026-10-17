@@ -3,18 +3,39 @@ import { z } from 'zod';
 import { getDb } from '../config/firebase';
 import { authenticateToken } from '../middleware/authMiddleware';
 import { requireRole } from '../middleware/roleMiddleware';
-import { ServiceRequest, WorkerProfile, Feedback } from '../types';
+import { ServiceRequest, WorkerProfile, Feedback, ReviewOption } from '../types';
 
 const router = Router();
 
+const REVIEW_MAP: Record<string, number> = {
+  'very bad': 1,
+  'bad': 2,
+  'ok': 3,
+  'good': 4,
+  'very good': 5,
+};
+
+const NUMERIC_TO_REVIEW: Record<number, ReviewOption> = {
+  1: 'very bad',
+  2: 'bad',
+  3: 'ok',
+  4: 'good',
+  5: 'very good',
+};
+
 const feedbackSchema = z.object({
-  rating: z.number().min(1).max(5),
-  comment: z.string().min(3, 'Comment must be at least 3 characters'),
+  review: z.enum(['very bad', 'bad', 'ok', 'good', 'very good']).optional(),
+  rating: z
+    .union([
+      z.enum(['very bad', 'bad', 'ok', 'good', 'very good']),
+      z.number().min(1).max(5),
+    ])
+    .optional(),
+  comment: z.string().optional().default(''),
 });
 
-// POST /api/requests/:id/feedback
-// Customer submits feedback for a completed service task
-router.post('/:id/feedback', authenticateToken, requireRole('CUSTOMER'), async (req: Request, res: Response) => {
+// Handler for submitting feedback (mounted across /api/requests/:id/feedback, /api/feedback/:id, etc.)
+const handleFeedbackSubmission = async (req: Request, res: Response) => {
   try {
     const { id: requestId } = req.params;
     const parse = feedbackSchema.safeParse(req.body);
@@ -23,9 +44,24 @@ router.post('/:id/feedback', authenticateToken, requireRole('CUSTOMER'), async (
       return;
     }
 
-    const { rating, comment } = parse.data;
+    const { review, rating, comment } = parse.data;
     const customerUid = req.user!.uid;
     const db = getDb();
+
+    // Map to numeric rating (1-5) and review string ('very good' | 'good' | 'ok' | 'bad' | 'very bad')
+    let numericRating = 4;
+    let reviewQuality: ReviewOption = 'good';
+
+    if (review) {
+      reviewQuality = review;
+      numericRating = REVIEW_MAP[review] || 4;
+    } else if (typeof rating === 'string' && rating in REVIEW_MAP) {
+      reviewQuality = rating as ReviewOption;
+      numericRating = REVIEW_MAP[rating] || 4;
+    } else if (typeof rating === 'number') {
+      numericRating = Math.min(5, Math.max(1, Math.round(rating)));
+      reviewQuality = NUMERIC_TO_REVIEW[numericRating] || 'good';
+    }
 
     const reqDoc = await db.collection('serviceRequests').doc(requestId).get();
     if (!reqDoc.exists) {
@@ -74,43 +110,62 @@ router.post('/:id/feedback', authenticateToken, requireRole('CUSTOMER'), async (
       customerId: customerUid,
       customerName: req.user!.name,
       workerId,
-      rating,
-      comment,
+      rating: numericRating,
+      review: reviewQuality,
+      comment: comment ? comment.trim() : reviewQuality,
       createdAt: now,
     };
 
-    // Calculate updated worker average rating
+    // Calculate updated worker average rating from all historical reviews
     const allWorkerFeedbacks = await db
       .collection('feedback')
       .where('workerId', '==', workerId)
       .get();
 
-    let totalRating = rating;
+    let totalRating = numericRating;
     let count = 1;
     for (const d of allWorkerFeedbacks.docs) {
       const fb = d.data() as Feedback;
-      totalRating += fb.rating;
-      count += 1;
+      if (typeof fb.rating === 'number' && !isNaN(fb.rating)) {
+        totalRating += fb.rating;
+        count += 1;
+      }
     }
     const newAverageRating = Math.round((totalRating / count) * 10) / 10;
 
     const batch = db.batch();
     batch.set(fbDocRef, newFeedback);
 
-    // Update worker profile
-    batch.update(db.collection('workerProfiles').doc(workerId), {
-      averageRating: newAverageRating,
-      updatedAt: now,
-    });
+    // Update worker profile with new average rating
+    batch.set(
+      db.collection('workerProfiles').doc(workerId),
+      {
+        averageRating: newAverageRating,
+        ratingCount: count,
+        updatedAt: now,
+      },
+      { merge: true }
+    );
 
-    // Notify worker
+    // Also update users collection for the worker
+    const workerUserRef = db.collection('users').doc(workerId);
+    batch.set(
+      workerUserRef,
+      {
+        averageRating: newAverageRating,
+        updatedAt: now,
+      },
+      { merge: true }
+    );
+
+    // Notify worker of their review
     const notifRef = db.collection('notifications').doc();
     batch.set(notifRef, {
       id: notifRef.id,
       recipientUid: workerId,
       type: 'FEEDBACK_SUBMITTED',
-      title: 'New Customer Feedback',
-      message: `${req.user!.name} rated you ${rating} stars for "${requestData.title}".`,
+      title: `New Review: ${reviewQuality.toUpperCase()}`,
+      message: `${req.user!.name} rated your service as "${reviewQuality}" (${numericRating} stars) for "${requestData.title}".`,
       requestId,
       read: false,
       createdAt: now,
@@ -122,17 +177,21 @@ router.post('/:id/feedback', authenticateToken, requireRole('CUSTOMER'), async (
       success: true,
       message: 'Feedback submitted successfully. Thank you!',
       feedback: newFeedback,
+      workerNewAverageRating: newAverageRating,
     });
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message });
   }
-});
+};
 
-// GET /api/workers/:id/feedback
-// Public reviews for a worker
-router.get('/workers/:id/feedback', async (req: Request, res: Response) => {
+// Mount for both POST /:id/feedback and POST /:id
+router.post('/:id/feedback', authenticateToken, requireRole('CUSTOMER'), handleFeedbackSubmission);
+router.post('/:id', authenticateToken, requireRole('CUSTOMER'), handleFeedbackSubmission);
+
+// Handler for retrieving worker reviews
+const handleGetWorkerReviews = async (req: Request, res: Response) => {
   try {
-    const { id: workerId } = req.params;
+    const workerId = req.params.id || req.params.workerId;
     const db = getDb();
     const snap = await db
       .collection('feedback')
@@ -150,6 +209,10 @@ router.get('/workers/:id/feedback', async (req: Request, res: Response) => {
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message });
   }
-});
+};
+
+router.get('/workers/:id/feedback', handleGetWorkerReviews);
+router.get('/:id/feedback', handleGetWorkerReviews);
+router.get('/:id', handleGetWorkerReviews);
 
 export default router;

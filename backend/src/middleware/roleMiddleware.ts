@@ -25,3 +25,26 @@ export function requireRole(...allowedRoles: UserRole[]) {
     next();
   };
 }
+
+/**
+ * Middleware that ensures the authenticated account is ACTIVE (blocks BANNED or SUSPENDED users).
+ */
+export function requireActiveAccount(req: Request, res: Response, next: NextFunction): void {
+  if (!req.user) {
+    res.status(401).json({
+      success: false,
+      error: 'Unauthorized. Authentication is required.',
+    });
+    return;
+  }
+
+  if (req.user.accountStatus === 'BANNED' || req.user.accountStatus === 'SUSPENDED') {
+    res.status(403).json({
+      success: false,
+      error: 'Your WorkForce account has been suspended or banned by administration. New actions and assignments are blocked.',
+    });
+    return;
+  }
+
+  next();
+}

@@ -9,8 +9,8 @@ export function errorHandler(
 ): void {
   console.error('[Error Handler]', err);
 
-  // Handle Multer upload errors
-  if (err.name === 'MulterError') {
+  // Handle Multer upload errors or file filter rejections
+  if (err.name === 'MulterError' || (err.message && err.message.toLowerCase().includes('file type'))) {
     res.status(400).json({
       success: false,
       error: `File upload error: ${err.message}`,

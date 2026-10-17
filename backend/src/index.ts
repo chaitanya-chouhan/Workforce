@@ -30,6 +30,7 @@ import tasksRouter from './routes/tasks';
 import feedbackRouter from './routes/feedback';
 import notificationsRouter from './routes/notifications';
 import adminRouter from './routes/admin';
+import complaintsRouter from './routes/complaints';
 import { errorHandler } from './middleware/errorHandler';
 
 const app = express();
@@ -92,10 +93,13 @@ app.use('/api/users', usersRouter);
 app.use('/api/workers', workersRouter);
 app.use('/api/requests', requestsRouter);
 app.use('/api/requests', otpRouter);
-app.use('/api/tasks', tasksRouter);
+app.use('/api/requests', feedbackRouter);
+app.use('/api/workers', feedbackRouter);
 app.use('/api/feedback', feedbackRouter);
+app.use('/api/tasks', tasksRouter);
 app.use('/api/notifications', notificationsRouter);
 app.use('/api/admin', adminRouter);
+app.use('/api/complaints', complaintsRouter);
 
 // Centralized Error Handler
 app.use(errorHandler);

@@ -2,7 +2,7 @@ import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { getDb } from '../config/firebase';
 import { authenticateToken } from '../middleware/authMiddleware';
-import { requireRole } from '../middleware/roleMiddleware';
+import { requireRole, requireActiveAccount } from '../middleware/roleMiddleware';
 import { generateAssignmentOtp, verifyOtp, OTP_EXPIRY_MINUTES } from '../services/otpService';
 import { ServiceRequest, WorkerProfile, Assignment } from '../types';
 
@@ -22,6 +22,7 @@ router.post(
   '/:id/assignment-otp',
   authenticateToken,
   requireRole('CUSTOMER'),
+  requireActiveAccount,
   async (req: Request, res: Response) => {
     try {
       const { id: requestId } = req.params;
@@ -74,12 +75,25 @@ router.post(
         });
         return;
       }
-      if (workerData.verificationStatus !== 'VERIFIED') {
+      if (workerData.verificationStatus !== 'VERIFIED' && workerData.verificationStatus !== 'APPROVED') {
         res.status(400).json({
           success: false,
           error: 'This worker has not yet completed administrator verification.',
         });
         return;
+      }
+
+      // Check worker user account status
+      const workerUserDoc = await db.collection('users').doc(workerId).get();
+      if (workerUserDoc.exists) {
+        const workerUserData = workerUserDoc.data();
+        if (workerUserData?.accountStatus === 'BANNED' || workerUserData?.accountStatus === 'SUSPENDED') {
+          res.status(400).json({
+            success: false,
+            error: 'This worker account has been suspended or banned by administration.',
+          });
+          return;
+        }
       }
       if (workerData.activeAssignmentCount >= 3) {
         res.status(400).json({
@@ -164,6 +178,7 @@ router.post(
   '/:id/verify-assignment-otp',
   authenticateToken,
   requireRole('WORKER'),
+  requireActiveAccount,
   async (req: Request, res: Response) => {
     try {
       const { id: requestId } = req.params;
@@ -211,7 +226,21 @@ router.post(
         const assignDoc = assignQuery.docs[0];
         const assignData = assignDoc.data() as Assignment;
 
-        // 3. Verify OTP cryptographic hash and attempt limits
+        // 3. Fetch worker profile (MUST read before any writes)
+        const workerRef = db.collection('workerProfiles').doc(workerUid);
+        const workerDoc = await transaction.get(workerRef);
+        if (!workerDoc.exists) {
+          throw new Error('Worker profile not found.');
+        }
+        const workerProfile = workerDoc.data() as WorkerProfile;
+        if (workerProfile.availabilityStatus !== 'AVAILABLE') {
+          throw new Error('You are currently marked Unavailable.');
+        }
+        if (workerProfile.verificationStatus !== 'VERIFIED' && workerProfile.verificationStatus !== 'APPROVED') {
+          throw new Error('This worker has not yet completed administrator verification.');
+        }
+
+        // 4. Verify OTP cryptographic hash and attempt limits
         const otpCheck = verifyOtp(
           otp,
           assignData.otpHash || '',
@@ -226,17 +255,6 @@ router.post(
             updatedAt: new Date().toISOString(),
           });
           throw new Error(otpCheck.reason || 'Invalid OTP');
-        }
-
-        // 4. Verify worker eligibility
-        const workerRef = db.collection('workerProfiles').doc(workerUid);
-        const workerDoc = await transaction.get(workerRef);
-        if (!workerDoc.exists) {
-          throw new Error('Worker profile not found.');
-        }
-        const workerProfile = workerDoc.data() as WorkerProfile;
-        if (workerProfile.availabilityStatus !== 'AVAILABLE') {
-          throw new Error('You are currently marked Unavailable.');
         }
 
         const now = new Date().toISOString();

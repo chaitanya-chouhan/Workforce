@@ -17,6 +17,14 @@ const registerSchema = z.object({
   locality: z.string().default('General'),
   district: z.string().default('Central'),
   state: z.string().default('Default State'),
+  // Worker-specific profile fields
+  skills: z.array(z.string()).optional(),
+  experienceYears: z.number().min(0).max(50).optional(),
+  bio: z.string().optional(),
+  serviceCategories: z.array(z.string()).optional(),
+  serviceArea: z.string().optional(),
+  hourlyRate: z.number().optional(),
+  minimumVisitFee: z.number().optional(),
 });
 
 // POST /api/auth/register
@@ -33,7 +41,23 @@ router.post('/register', async (req: Request, res: Response) => {
       return;
     }
 
-    const { uid, email, name, role, phone, locality, district, state } = parseResult.data;
+    const {
+      uid,
+      email,
+      name,
+      role,
+      phone,
+      locality,
+      district,
+      state,
+      skills,
+      experienceYears,
+      bio,
+      serviceCategories,
+      serviceArea,
+      hourlyRate,
+      minimumVisitFee,
+    } = parseResult.data;
 
     if (!isFirebaseAdminConfigured()) {
       res.status(503).json({
@@ -83,16 +107,18 @@ router.post('/register', async (req: Request, res: Response) => {
         name,
         email,
         phone: phone || '',
-        bio: 'New service provider on WorkForce',
-        experienceYears: 1,
-        skills: ['general_maintenance'],
+        bio: bio || 'New service provider on WorkForce',
+        experienceYears: experienceYears ?? 1,
+        skills: skills && skills.length > 0 ? skills : ['general_maintenance'],
+        serviceCategories: serviceCategories || [],
         indicativeRates: {
-          hourlyRate: 300,
-          minimumVisitFee: 200,
+          hourlyRate: hourlyRate || 300,
+          minimumVisitFee: minimumVisitFee || 200,
         },
-        serviceArea: locality,
+        serviceArea: serviceArea || locality,
         availabilityStatus: 'AVAILABLE',
         verificationStatus: 'PENDING', // Admin must review
+        identityDocumentSubmitted: false,
         averageRating: 5.0,
         completedJobsCount: 0,
         activeAssignmentCount: 0,

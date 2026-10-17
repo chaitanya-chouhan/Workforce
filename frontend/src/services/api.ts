@@ -32,7 +32,9 @@ async function request<T = any>(
   }
 
   // Do not set Content-Type for FormData uploads (browser sets multipart boundary automatically)
-  if (!(options.body instanceof FormData) && !headers.has('Content-Type')) {
+  if (options.body instanceof FormData) {
+    headers.delete('Content-Type');
+  } else if (!headers.has('Content-Type')) {
     headers.set('Content-Type', 'application/json');
   }
 
@@ -109,31 +111,108 @@ export const api = {
   confirmTaskCompletion: (id: string) =>
     request(`/tasks/${id}/confirm-completion`, { method: 'POST' }),
 
-  // Feedback
-  submitFeedback: (requestId: string, payload: { rating: number; comment: string }) =>
+  // Feedback & Reviews
+  submitFeedback: (requestId: string, payload: { rating?: number; review?: string; comment?: string }) =>
     request(`/requests/${requestId}/feedback`, {
       method: 'POST',
       body: JSON.stringify(payload),
     }),
   getWorkerFeedback: (workerId: string) => request(`/workers/${workerId}/feedback`),
 
+  // Interest & Assignment Moderation
+  declineTaskInterest: (requestId: string, workerId: string) =>
+    request(`/requests/${requestId}/interests/${workerId}/decline`, { method: 'POST' }),
+  cancelAssignment: (requestId: string) =>
+    request(`/requests/${requestId}/cancel-assignment`, { method: 'POST' }),
+
   // Notifications
   getNotifications: () => request('/notifications'),
   markNotificationRead: (id: string) =>
     request(`/notifications/${id}/read`, { method: 'PATCH' }),
 
+  // Worker Identity Document
+  uploadIdentityDocument: (formData: FormData) =>
+    request('/workers/me/identity-document', { method: 'POST', body: formData }),
+  getMyDocumentBlob: async (): Promise<string> => {
+    return api.fetchDocumentBlob('/workers/me/document');
+  },
+
+  // Complaints
+  submitComplaint: (formData: FormData) =>
+    request('/complaints', { method: 'POST', body: formData }),
+  getMyComplaints: () => request('/complaints/my'),
+
+  // Secure Document Viewer Helper (Authenticated Blob URL)
+  fetchDocumentBlob: async (endpoint: string): Promise<string> => {
+    const token = await getIdToken();
+    const url = `${API_BASE}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`;
+    const res = await fetch(url, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || `Failed to fetch document (${res.status})`);
+    }
+    const blob = await res.blob();
+    return URL.createObjectURL(blob);
+  },
+
   // Admin
   getStats: () => request('/admin/stats'),
   getAdminWorkers: () => request('/admin/workers'),
-  verifyWorker: (workerId: string, status: 'VERIFIED' | 'REJECTED', notes?: string) =>
+  getAdminWorkerDocumentBlob: (workerId: string) =>
+    api.fetchDocumentBlob(`/admin/workers/${workerId}/document`),
+  verifyWorker: (
+    workerId: string,
+    status: 'VERIFIED' | 'APPROVED' | 'REJECTED' | 'RESUBMISSION_REQUIRED',
+    notes: string
+  ) =>
     request(`/admin/workers/${workerId}/verify`, {
       method: 'POST',
       body: JSON.stringify({ status, notes }),
+    }),
+  getAdminUsers: (params?: { role?: string; status?: string }) => {
+    const query = new URLSearchParams(params as any).toString();
+    return request(`/admin/users${query ? `?${query}` : ''}`);
+  },
+  banUser: (userId: string, reason: string) =>
+    request(`/admin/users/${userId}/ban`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    }),
+  unbanUser: (userId: string, reason?: string) =>
+    request(`/admin/users/${userId}/unban`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    }),
+  getAdminComplaints: (params?: { targetRole?: string; status?: string }) => {
+    const query = new URLSearchParams(params as any).toString();
+    return request(`/admin/complaints${query ? `?${query}` : ''}`);
+  },
+  getAdminComplaint: (id: string) => request(`/admin/complaints/${id}`),
+  updateComplaintStatus: (
+    id: string,
+    status: 'UNDER_REVIEW' | 'RESOLVED' | 'DISMISSED',
+    resolutionNotes?: string
+  ) =>
+    request(`/admin/complaints/${id}/status`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status, resolutionNotes }),
+    }),
+  getComplaintEvidenceBlob: (complaintId: string) =>
+    api.fetchDocumentBlob(`/complaints/${complaintId}/evidence`),
+  getAuditLogs: (params?: { action?: string; limit?: number }) => {
+    const query = new URLSearchParams(params as any).toString();
+    return request(`/admin/audit-logs${query ? `?${query}` : ''}`);
+  },
+  changeAdminPassword: (payload: { currentPassword?: string; newPassword: string }) =>
+    request('/admin/password/change', {
+      method: 'POST',
+      body: JSON.stringify(payload),
     }),
   getRateCards: () => request('/admin/rate-cards'),
   createRateCard: (payload: any) =>
     request('/admin/rate-cards', { method: 'POST', body: JSON.stringify(payload) }),
   getSkills: () => request('/admin/skills'),
-  getAdminUsers: () => request('/admin/users'),
   getAdminRequests: () => request('/admin/requests'),
 };

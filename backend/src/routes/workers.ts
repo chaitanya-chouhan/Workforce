@@ -1,10 +1,12 @@
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
+import fs from 'fs';
 import { getDb } from '../config/firebase';
 import { authenticateToken } from '../middleware/authMiddleware';
-import { requireRole } from '../middleware/roleMiddleware';
-import { WorkerProfile, ServiceRequest, TaskInterest } from '../types';
+import { requireRole, requireActiveAccount } from '../middleware/roleMiddleware';
+import { WorkerProfile, ServiceRequest, TaskInterest, WorkerDocument } from '../types';
 import { findMatchingWorkers } from '../services/matchingService';
+import { uploadIdentityDocument, removePrivateFile } from '../config/storage';
 
 const router = Router();
 
@@ -65,22 +67,125 @@ router.patch('/me', authenticateToken, requireRole('WORKER'), async (req: Reques
   }
 });
 
-// PATCH /api/workers/me/availability
-router.patch('/me/availability', authenticateToken, requireRole('WORKER'), async (req: Request, res: Response) => {
+// POST /api/workers/me/identity-document
+// Uploads government/Aadhaar identity document to private, access-controlled storage
+router.post(
+  '/me/identity-document',
+  authenticateToken,
+  requireRole('WORKER'),
+  requireActiveAccount,
+  uploadIdentityDocument.single('document'),
+  async (req: Request, res: Response) => {
+    try {
+      if (!req.file) {
+        res.status(400).json({
+          success: false,
+          error: 'No identity document file was uploaded. Please attach a valid JPEG, PNG, WebP, or PDF file.',
+        });
+        return;
+      }
+
+      const db = getDb();
+      const workerId = req.user!.uid;
+      const maskedAadhaar = (req.body.maskedAadhaar || '').trim();
+
+      // Check for previous document to delete file from private storage
+      const prevDocSnap = await db.collection('workerDocuments').where('workerId', '==', workerId).get();
+      for (const d of prevDocSnap.docs) {
+        const docData = d.data() as WorkerDocument;
+        if (docData.storagePath) {
+          removePrivateFile(docData.storagePath);
+        }
+        await d.ref.delete();
+      }
+
+      const now = new Date().toISOString();
+      const docRef = db.collection('workerDocuments').doc();
+
+      const newDoc: WorkerDocument = {
+        id: docRef.id,
+        workerId,
+        documentType: 'AADHAAR',
+        originalFileName: req.file.originalname,
+        fileSize: req.file.size,
+        mimeType: req.file.mimetype,
+        storagePath: req.file.path,
+        ...(maskedAadhaar ? { maskedNumber: maskedAadhaar } : {}),
+        uploadedAt: now,
+        verificationStatus: 'PENDING',
+      };
+
+      await docRef.set(newDoc);
+
+      // Update worker profile
+      const workerRef = db.collection('workerProfiles').doc(workerId);
+      await workerRef.update({
+        identityDocumentId: docRef.id,
+        identityDocumentSubmitted: true,
+        ...(maskedAadhaar ? { maskedAadhaar } : {}),
+        verificationStatus: 'PENDING',
+        updatedAt: now,
+      });
+
+      res.status(201).json({
+        success: true,
+        message: 'Identity document uploaded securely for administrator verification.',
+        documentId: docRef.id,
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  }
+);
+
+// GET /api/workers/me/document
+// Securely streams the worker's own uploaded identity document
+router.get(
+  '/me/document',
+  authenticateToken,
+  requireRole('WORKER'),
+  async (req: Request, res: Response) => {
+    try {
+      const db = getDb();
+      const workerId = req.user!.uid;
+
+      const snap = await db.collection('workerDocuments').where('workerId', '==', workerId).limit(1).get();
+      if (snap.empty) {
+        res.status(404).json({ success: false, error: 'No identity document on file.' });
+        return;
+      }
+
+      const docData = snap.docs[0].data() as WorkerDocument;
+      if (!fs.existsSync(docData.storagePath)) {
+        res.status(404).json({ success: false, error: 'Document file not found in storage.' });
+        return;
+      }
+
+      res.setHeader('Content-Type', docData.mimeType || 'application/octet-stream');
+      res.setHeader('Content-Disposition', `inline; filename="${docData.originalFileName || 'identity_document'}"`);
+      res.sendFile(docData.storagePath);
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  }
+);
+
+// PATCH & POST /api/workers/me/availability
+const handleAvailabilityToggle = async (req: Request, res: Response) => {
   try {
     const parse = availabilitySchema.safeParse(req.body);
     if (!parse.success) {
-      res.status(400).json({ success: false, error: 'Invalid availability status' });
+      res.status(400).json({ success: false, error: 'Invalid availability status. Must be AVAILABLE or UNAVAILABLE.' });
       return;
     }
 
     const db = getDb();
     const workerRef = db.collection('workerProfiles').doc(req.user!.uid);
 
-    await workerRef.update({
+    await workerRef.set({
       availabilityStatus: parse.data.availabilityStatus,
       updatedAt: new Date().toISOString(),
-    });
+    }, { merge: true });
 
     res.json({
       success: true,
@@ -90,7 +195,12 @@ router.patch('/me/availability', authenticateToken, requireRole('WORKER'), async
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message });
   }
-});
+};
+
+router.patch('/me/availability', authenticateToken, requireRole('WORKER'), requireActiveAccount, handleAvailabilityToggle);
+router.post('/me/availability', authenticateToken, requireRole('WORKER'), requireActiveAccount, handleAvailabilityToggle);
+router.patch('/availability', authenticateToken, requireRole('WORKER'), requireActiveAccount, handleAvailabilityToggle);
+router.post('/availability', authenticateToken, requireRole('WORKER'), requireActiveAccount, handleAvailabilityToggle);
 
 // GET /api/workers/matches?requestId=...
 router.get('/matches', authenticateToken, async (req: Request, res: Response) => {
@@ -181,13 +291,26 @@ router.get('/open-tasks', authenticateToken, requireRole('WORKER'), async (req: 
 
 // POST /api/workers/tasks/:requestId/interest
 // Worker expresses interest in an open service request
-router.post('/tasks/:requestId/interest', authenticateToken, requireRole('WORKER'), async (req: Request, res: Response) => {
+router.post('/tasks/:requestId/interest', authenticateToken, requireRole('WORKER'), requireActiveAccount, async (req: Request, res: Response) => {
   try {
     const { requestId } = req.params;
     const { message } = req.body;
     const workerUid = req.user!.uid;
 
     const db = getDb();
+
+    // Check worker profile and verification status
+    const workerProfileDoc = await db.collection('workerProfiles').doc(workerUid).get();
+    const workerProfile = workerProfileDoc.data() as WorkerProfile | undefined;
+
+    if (workerProfile?.verificationStatus !== 'VERIFIED' && workerProfile?.verificationStatus !== 'APPROVED') {
+      res.status(403).json({
+        success: false,
+        error: 'This worker has not yet completed administrator verification. You cannot accept or express interest in tasks until approved.',
+      });
+      return;
+    }
+
     const reqDoc = await db.collection('serviceRequests').doc(requestId).get();
     if (!reqDoc.exists) {
       res.status(404).json({ success: false, error: 'Service request not found' });
@@ -212,10 +335,6 @@ router.post('/tasks/:requestId/interest', authenticateToken, requireRole('WORKER
       res.status(400).json({ success: false, error: 'You have already expressed interest in this task.' });
       return;
     }
-
-    // Get worker profile details
-    const workerProfileDoc = await db.collection('workerProfiles').doc(workerUid).get();
-    const workerProfile = workerProfileDoc.data() as WorkerProfile | undefined;
 
     const now = new Date().toISOString();
     const interestDocRef = db.collection('taskInterests').doc();

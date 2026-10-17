@@ -12,6 +12,7 @@ import SafetyAlert from '../components/SafetyAlert';
 import CostEstimateCard from '../components/CostEstimateCard';
 import OtpDisplayModal from '../components/OtpDisplayModal';
 import FeedbackModal from '../components/FeedbackModal';
+import ComplaintModal from '../components/ComplaintModal';
 import {
   PlusCircle,
   FileText,
@@ -25,6 +26,7 @@ import {
   Users,
   ChevronRight,
   Shield,
+  ShieldAlert,
   XCircle,
   Image as ImageIcon,
 } from 'lucide-react';
@@ -47,8 +49,12 @@ export const CustomerDashboard: React.FC = () => {
   const [locality, setLocality] = useState(user?.locality || 'Indiranagar');
   const [district, setDistrict] = useState(user?.district || 'Bengaluru');
   const [urgency, setUrgency] = useState<'low' | 'medium' | 'high' | 'emergency'>('medium');
+  const [preferredTime, setPreferredTime] = useState('');
   const [imageFile, setImageFile] = useState<File | null>(null);
+  const [imageFileName, setImageFileName] = useState<string | null>(null);
+  const [imageFileSize, setImageFileSize] = useState<string | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
 
   // State loading & modals
   const [loading, setLoading] = useState(false);
@@ -78,6 +84,14 @@ export const CustomerDashboard: React.FC = () => {
     requestId: '',
     workerName: '',
   });
+
+  // Complaint Modal State
+  const [complaintModalData, setComplaintModalData] = useState<{
+    isOpen: boolean;
+    workerId: string;
+    workerName: string;
+    requestId: string;
+  } | null>(null);
 
   const fetchRequests = async () => {
     try {
@@ -137,21 +151,44 @@ export const CustomerDashboard: React.FC = () => {
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
-      if (file.size > 5 * 1024 * 1024) {
-        setError('Image must be under 5MB.');
-        return;
-      }
-      setImageFile(file);
-      const reader = new FileReader();
-      reader.onloadend = () => setImagePreview(reader.result as string);
-      reader.readAsDataURL(file);
+    if (!file) return;
+
+    const allowedTypes = ['image/jpeg', 'image/png', 'image/webp'];
+    if (!allowedTypes.includes(file.type)) {
+      setError('Invalid file type. Only JPEG, PNG, and WebP images are supported.');
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      return;
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      setError('Image must be under 5MB.');
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      return;
+    }
+
+    setError(null);
+    setImageFile(file);
+    setImageFileName(file.name);
+    setImageFileSize(`${(file.size / 1024).toFixed(1)} KB`);
+
+    const reader = new FileReader();
+    reader.onloadend = () => setImagePreview(reader.result as string);
+    reader.readAsDataURL(file);
+  };
+
+  const handleRemovePhoto = () => {
+    setImageFile(null);
+    setImagePreview(null);
+    setImageFileName(null);
+    setImageFileSize(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
     }
   };
 
   const handleCreateAndAnalyze = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!title || !description) {
+    if (!title.trim() || !description.trim()) {
       setError('Please provide a title and problem description.');
       return;
     }
@@ -160,47 +197,94 @@ export const CustomerDashboard: React.FC = () => {
     setAnalyzing(true);
     setError(null);
 
+    let newId: string | null = null;
+    const capturedImageFile = imageFile;
+
     try {
-      // 1. Create Request
-      const created = await api.createRequest({
-        title,
-        description,
+      // 1. Create Request (safely sending trimmed preferredTime only if provided)
+      const payload: any = {
+        title: title.trim(),
+        description: description.trim(),
         category,
-        locality,
-        district,
+        locality: locality.trim(),
+        district: district.trim(),
         state: user?.state || 'Karnataka',
         urgency,
-      });
+      };
 
-      if (!created.success) {
+      if (preferredTime && preferredTime.trim()) {
+        payload.preferredTime = preferredTime.trim();
+      }
+
+      const created = await api.createRequest(payload);
+
+      if (!created.success || !created.request?.id) {
         throw new Error(created.error || 'Failed to create request');
       }
 
-      const newId = created.request.id;
+      newId = created.request.id;
 
-      // 2. Call Gemma 4 Analysis endpoint with optional image
-      const formData = new FormData();
-      if (imageFile) {
-        formData.append('image', imageFile);
-      }
-
-      const analyzeRes = await api.analyzeRequest(newId, formData);
-      if (!analyzeRes.success) {
-        throw new Error(analyzeRes.error || 'Gemma 4 diagnostic processing failed.');
-      }
-
-      // Reset form and select new request
+      // Request created successfully: clean up form and select request
       setShowNewForm(false);
       setTitle('');
       setDescription('');
-      setImageFile(null);
-      setImagePreview(null);
+      setPreferredTime('');
+      handleRemovePhoto();
       await fetchRequests();
       setSelectedRequestId(newId);
-    } catch (err: any) {
-      setError(err.message || 'An error occurred during submission and AI analysis.');
-    } finally {
+    } catch (createErr: any) {
+      setError(createErr.message || 'Failed to submit service request.');
       setLoading(false);
+      setAnalyzing(false);
+      return;
+    }
+
+    // 2. Call Gemma 4 Analysis endpoint with optional image
+    if (newId) {
+      try {
+        const formData = new FormData();
+        if (capturedImageFile) {
+          formData.append('image', capturedImageFile);
+        }
+
+        const analyzeRes = await api.analyzeRequest(newId, formData);
+        if (!analyzeRes.success) {
+          setError(
+            `Service request created (Status: Submitted), but Gemma 4 diagnostic returned: ${
+              analyzeRes.error || 'Unknown error'
+            }`
+          );
+        }
+        await fetchRequestDetails(newId);
+        await fetchRequests();
+      } catch (aiErr: any) {
+        setError(
+          `Service request created (Status: Submitted), but Gemma 4 analysis failed: ${aiErr.message}`
+        );
+        await fetchRequestDetails(newId);
+        await fetchRequests();
+      } finally {
+        setLoading(false);
+        setAnalyzing(false);
+      }
+    }
+  };
+
+  const handleRunDiagnostic = async (requestId: string) => {
+    setAnalyzing(true);
+    setError(null);
+    try {
+      const formData = new FormData();
+      const res = await api.analyzeRequest(requestId, formData);
+      if (!res.success) {
+        setError(res.error || 'Failed to run Gemma 4 diagnostic.');
+      } else {
+        await fetchRequestDetails(requestId);
+        await fetchRequests();
+      }
+    } catch (err: any) {
+      setError(`Gemma 4 Diagnostic error: ${err.message}`);
+    } finally {
       setAnalyzing(false);
     }
   };
@@ -237,14 +321,51 @@ export const CustomerDashboard: React.FC = () => {
       if (res.success) {
         await fetchRequestDetails(selectedRequestId);
         await fetchRequests();
+        const resolvedName =
+          activeAssignment?.workerName ||
+          (currentRequest as any)?.assignedWorkerName ||
+          'Service Provider';
         setFeedbackModalData({
           isOpen: true,
           requestId: selectedRequestId,
-          workerName: currentRequest?.selectedWorkerId || 'Service Provider',
+          workerName: resolvedName,
         });
       }
     } catch (err: any) {
       setError(err.message || 'Error confirming completion');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDeclineInterest = async (workerId: string, workerName: string) => {
+    if (!selectedRequestId) return;
+    if (!confirm(`Are you sure you want to decline interest from ${workerName}?`)) return;
+    setLoading(true);
+    try {
+      const res = await api.declineTaskInterest(selectedRequestId, workerId);
+      if (res.success) {
+        await fetchRequestDetails(selectedRequestId);
+      }
+    } catch (err: any) {
+      setError(err.message || 'Failed to decline worker interest.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCancelAssignment = async () => {
+    if (!selectedRequestId) return;
+    if (!confirm('Are you sure you want to cancel this pending assignment and pick another worker?')) return;
+    setLoading(true);
+    try {
+      const res = await api.cancelAssignment(selectedRequestId);
+      if (res.success) {
+        await fetchRequestDetails(selectedRequestId);
+        await fetchRequests();
+      }
+    } catch (err: any) {
+      setError(err.message || 'Failed to cancel assignment.');
     } finally {
       setLoading(false);
     }
@@ -382,6 +503,19 @@ export const CustomerDashboard: React.FC = () => {
               </div>
             </div>
 
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                Preferred Schedule / Time (Optional)
+              </label>
+              <input
+                type="text"
+                value={preferredTime}
+                onChange={e => setPreferredTime(e.target.value)}
+                placeholder="e.g. Tomorrow morning after 10 AM, or Weekends"
+                className="w-full text-xs p-3 rounded-xl border border-slate-300 focus:ring-2 focus:ring-brand-500 outline-none"
+              />
+            </div>
+
             {/* Optional Image Upload */}
             <div className="border-2 border-dashed border-slate-200 rounded-2xl p-4 text-center space-y-2">
               {imagePreview ? (
@@ -391,12 +525,13 @@ export const CustomerDashboard: React.FC = () => {
                     alt="Problem Preview"
                     className="max-h-40 mx-auto rounded-xl shadow-sm object-cover"
                   />
+                  <div className="flex items-center justify-center space-x-2 text-xs text-slate-600">
+                    <span className="font-semibold text-slate-800 truncate max-w-xs">{imageFileName}</span>
+                    {imageFileSize && <span className="text-slate-400">({imageFileSize})</span>}
+                  </div>
                   <button
                     type="button"
-                    onClick={() => {
-                      setImageFile(null);
-                      setImagePreview(null);
-                    }}
+                    onClick={handleRemovePhoto}
                     className="text-xs text-red-600 font-semibold hover:underline"
                   >
                     Remove Photo
@@ -408,6 +543,7 @@ export const CustomerDashboard: React.FC = () => {
                   <label className="cursor-pointer text-xs font-semibold text-brand-600 hover:text-brand-700">
                     <span>Upload a problem photo (Optional, max 5MB)</span>
                     <input
+                      ref={fileInputRef}
                       type="file"
                       accept="image/jpeg,image/png,image/webp"
                       onChange={handleImageChange}
@@ -415,7 +551,7 @@ export const CustomerDashboard: React.FC = () => {
                     />
                   </label>
                   <p className="text-[11px] text-slate-400 mt-0.5">
-                    Images are processed in memory by Gemma 4 and never permanently stored.
+                    Images (JPEG, PNG, WebP up to 5MB) are analyzed in memory by Gemma 4 and never permanently stored.
                   </p>
                 </div>
               )}
@@ -533,14 +669,32 @@ export const CustomerDashboard: React.FC = () => {
                     </span>
                   </div>
 
-                  {currentRequest.status === 'COMPLETION_PENDING_CONFIRMATION' && (
-                    <button
-                      onClick={handleConfirmCompletion}
-                      className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-md transition-all"
-                    >
-                      Confirm Work Done & Review
-                    </button>
-                  )}
+                  <div className="flex items-center space-x-2">
+                    {currentRequest.status === 'COMPLETION_PENDING_CONFIRMATION' && (
+                      <button
+                        onClick={handleConfirmCompletion}
+                        className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-md transition-all"
+                      >
+                        Confirm Work Done & Review
+                      </button>
+                    )}
+                    {(activeAssignment?.workerId || (currentRequest as any).assignedWorkerId) && (
+                      <button
+                        onClick={() =>
+                          setComplaintModalData({
+                            isOpen: true,
+                            workerId: activeAssignment?.workerId || (currentRequest as any).assignedWorkerId,
+                            workerName: activeAssignment?.workerName || 'Assigned Worker',
+                            requestId: currentRequest.id,
+                          })
+                        }
+                        className="px-3 py-1.5 rounded-xl border border-red-200 text-red-600 hover:bg-red-50 text-xs font-semibold flex items-center space-x-1.5 transition-colors"
+                      >
+                        <ShieldAlert className="w-3.5 h-3.5" />
+                        <span>Report Worker</span>
+                      </button>
+                    )}
+                  </div>
                 </div>
 
                 <h2 className="text-xl font-black text-slate-900 tracking-tight">{currentRequest.title}</h2>
@@ -550,9 +704,42 @@ export const CustomerDashboard: React.FC = () => {
                   <span>Locality: <strong className="text-slate-800">{currentRequest.locality}</strong></span>
                   <span>District: <strong className="text-slate-800">{currentRequest.district}</strong></span>
                   <span>Urgency: <strong className="text-slate-800 capitalize">{currentRequest.urgency}</strong></span>
+                  {currentRequest.preferredTime && (
+                    <span>Preferred Time: <strong className="text-slate-800">{currentRequest.preferredTime}</strong></span>
+                  )}
                   <span>Created: <strong className="text-slate-800">{new Date(currentRequest.createdAt).toLocaleString()}</strong></span>
                 </div>
               </div>
+
+              {/* Action Banner for Submitted Requests without AI Analysis */}
+              {currentRequest.status === 'SUBMITTED' && !currentAiAnalysis && (
+                <div className="bg-amber-50 border border-amber-200 rounded-3xl p-6 sm:p-8 space-y-4">
+                  <div className="flex items-center space-x-2 text-amber-900 font-bold text-sm">
+                    <Sparkles className="w-5 h-5 text-amber-600 shrink-0" />
+                    <span>Run Gemma 4 Diagnostic Interpretation</span>
+                  </div>
+                  <p className="text-xs text-amber-800 leading-relaxed">
+                    This request has been saved in your history. You can run Gemma 4 diagnostic interpretation now to evaluate safety risks, identify required worker skills, and calculate sample cost estimates.
+                  </p>
+                  <button
+                    onClick={() => handleRunDiagnostic(currentRequest.id)}
+                    disabled={analyzing}
+                    className="px-5 py-2.5 bg-brand-600 hover:bg-brand-700 text-white font-bold text-xs rounded-xl shadow-md transition-all flex items-center space-x-2 disabled:opacity-50"
+                  >
+                    {analyzing ? (
+                      <>
+                        <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                        <span>Analyzing with Gemma 4...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles className="w-4 h-4" />
+                        <span>Run Gemma 4 Diagnostic</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              )}
 
               {/* Gemma 4 Diagnostic Analysis Section */}
               {currentAiAnalysis && (
@@ -659,30 +846,130 @@ export const CustomerDashboard: React.FC = () => {
                   </span>
                 </div>
 
+                {/* Pending Assignment Banner */}
+                {activeAssignment && activeAssignment.status === 'PENDING_OTP' && (
+                  <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div className="space-y-0.5">
+                      <div className="flex items-center space-x-2">
+                        <span className="text-xs font-black text-amber-950 uppercase tracking-wider block">
+                          Assignment Pending OTP Verification
+                        </span>
+                        <span className="text-[10px] bg-amber-200 text-amber-900 font-extrabold px-2 py-0.5 rounded-full">
+                          Awaiting Technician
+                        </span>
+                      </div>
+                      <p className="text-xs text-amber-800">
+                        Selected Technician: <strong className="text-amber-950">{activeAssignment.workerName || 'Worker'}</strong>
+                      </p>
+                    </div>
+                    <div className="flex items-center space-x-2 shrink-0">
+                      <button
+                        onClick={handleCancelAssignment}
+                        disabled={loading}
+                        className="px-3.5 py-2 border border-red-200 hover:bg-red-50 text-red-700 text-xs font-bold rounded-xl transition-all"
+                      >
+                        Cancel & Choose Another Worker
+                      </button>
+                      <button
+                        onClick={() =>
+                          setOtpModalData({
+                            isOpen: true,
+                            otp: (activeAssignment as any).otp || '******',
+                            expiresAt: activeAssignment.otpExpiresAt || '',
+                            workerName: activeAssignment.workerName || 'Worker',
+                          })
+                        }
+                        className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold rounded-xl shadow-sm transition-all flex items-center space-x-1.5"
+                      >
+                        <KeyRound className="w-3.5 h-3.5" />
+                        <span>View OTP</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
+
                 {/* Interested Workers Section (Workers who expressed interest) */}
-                {interestedWorkers.length > 0 && (
-                  <div className="bg-indigo-50/60 border border-indigo-100 rounded-2xl p-4 space-y-3">
-                    <span className="text-xs font-bold text-indigo-900 uppercase tracking-wider block">
-                      Workers Who Expressed Interest in This Job
-                    </span>
-                    <div className="space-y-2">
-                      {interestedWorkers.map(iw => (
-                        <div
-                          key={iw.id}
-                          className="bg-white rounded-xl p-3 border border-indigo-200/60 flex items-center justify-between gap-3"
-                        >
-                          <div>
-                            <p className="font-bold text-xs text-slate-900">{iw.workerName || 'Worker'}</p>
-                            <p className="text-[11px] text-slate-500 italic">"{iw.message}"</p>
-                          </div>
-                          <button
-                            onClick={() => handleGenerateOtp(iw.workerId, iw.workerName || 'Worker')}
-                            className="px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white font-bold text-xs rounded-xl shadow-sm transition-all shrink-0"
+                {interestedWorkers.filter(iw => iw.status !== 'REJECTED').length > 0 && (
+                  <div className="bg-indigo-50/70 border border-indigo-200 rounded-2xl p-4 sm:p-5 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-black text-indigo-950 uppercase tracking-wider block">
+                        Technicians Interested in Your Request
+                      </span>
+                      <span className="text-[11px] font-bold text-indigo-700 bg-white px-2.5 py-0.5 rounded-full border border-indigo-200">
+                        {interestedWorkers.filter(iw => iw.status !== 'REJECTED').length} Expressed Interest
+                      </span>
+                    </div>
+
+                    <div className="space-y-3">
+                      {interestedWorkers
+                        .filter(iw => iw.status !== 'REJECTED')
+                        .map(iw => (
+                          <div
+                            key={iw.id}
+                            className="bg-white rounded-2xl p-4 border border-indigo-200/80 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4 transition-all"
                           >
-                            Select & Generate OTP
-                          </button>
-                        </div>
-                      ))}
+                            <div className="space-y-1.5 flex-1">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <h4 className="font-black text-sm text-slate-900">{iw.workerName}</h4>
+                                <span className="inline-flex items-center text-xs font-bold text-amber-500 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200">
+                                  <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400 mr-1" />
+                                  {typeof iw.workerRating === 'number'
+                                    ? iw.workerRating.toFixed(1)
+                                    : '5.0'}{' '}
+                                  / 5.0
+                                </span>
+                                {iw.workerCompletedJobsCount > 0 && (
+                                  <span className="text-[11px] text-slate-500 font-medium">
+                                    • {iw.workerCompletedJobsCount} jobs completed
+                                  </span>
+                                )}
+                                {iw.workerServiceArea && (
+                                  <span className="text-[11px] text-slate-500 font-medium">
+                                    • {iw.workerServiceArea}
+                                  </span>
+                                )}
+                              </div>
+
+                              {iw.message && (
+                                <p className="text-xs text-slate-600 bg-slate-50 p-2.5 rounded-xl border border-slate-100 italic">
+                                  "{iw.message}"
+                                </p>
+                              )}
+
+                              {iw.workerSkills && iw.workerSkills.length > 0 && (
+                                <div className="flex flex-wrap gap-1 pt-0.5">
+                                  {iw.workerSkills.map((sk: string, sIdx: number) => (
+                                    <span
+                                      key={sIdx}
+                                      className="text-[10px] font-semibold bg-slate-100 text-slate-700 px-2 py-0.5 rounded-md"
+                                    >
+                                      {sk}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+
+                            {/* Action Options: Accept & Decline */}
+                            <div className="flex items-center space-x-2 shrink-0 self-end sm:self-auto">
+                              <button
+                                onClick={() => handleDeclineInterest(iw.workerId, iw.workerName)}
+                                disabled={loading}
+                                className="px-3.5 py-2 border border-slate-300 hover:border-red-300 hover:bg-red-50 text-slate-700 hover:text-red-700 font-bold text-xs rounded-xl transition-all"
+                              >
+                                Decline
+                              </button>
+                              <button
+                                onClick={() => handleGenerateOtp(iw.workerId, iw.workerName)}
+                                disabled={loading}
+                                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-sm transition-all flex items-center space-x-1.5"
+                              >
+                                <KeyRound className="w-3.5 h-3.5" />
+                                <span>Accept & Generate OTP</span>
+                              </button>
+                            </div>
+                          </div>
+                        ))}
                     </div>
                   </div>
                 )}
@@ -772,6 +1059,21 @@ export const CustomerDashboard: React.FC = () => {
           if (selectedRequestId) fetchRequestDetails(selectedRequestId);
         }}
       />
+
+      {/* Complaint Modal */}
+      {complaintModalData && (
+        <ComplaintModal
+          isOpen={complaintModalData.isOpen}
+          onClose={() => setComplaintModalData(null)}
+          targetUserId={complaintModalData.workerId}
+          targetUserName={complaintModalData.workerName}
+          targetRole="WORKER"
+          requestId={complaintModalData.requestId}
+          onSubmitted={() => {
+            if (selectedRequestId) fetchRequestDetails(selectedRequestId);
+          }}
+        />
+      )}
     </div>
   );
 };

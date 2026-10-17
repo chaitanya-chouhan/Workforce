@@ -3,6 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
 import { WorkerProfile, ServiceRequest, Feedback } from '../types';
 import OtpVerifyModal from '../components/OtpVerifyModal';
+import ComplaintModal from '../components/ComplaintModal';
 import SafetyAlert from '../components/SafetyAlert';
 import {
   Wrench,
@@ -19,6 +20,12 @@ import {
   MessageSquare,
   Send,
   Sparkles,
+  ShieldAlert,
+  ShieldCheck,
+  FileText,
+  Upload,
+  Eye,
+  Info,
 } from 'lucide-react';
 
 export const WorkerDashboard: React.FC = () => {
@@ -33,9 +40,22 @@ export const WorkerDashboard: React.FC = () => {
 
   // Modals & action states
   const [selectedTaskForOtp, setSelectedTaskForOtp] = useState<any | null>(null);
-  const [selectedTaskForDetails, setSelectedTaskForDetails] = useState<any | null>(null);
   const [interestMessage, setInterestMessage] = useState('');
   const [expressingInterestId, setExpressingInterestId] = useState<string | null>(null);
+
+  // Document upload state
+  const [docFile, setDocFile] = useState<File | null>(null);
+  const [maskedAadhaar, setMaskedAadhaar] = useState('');
+  const [uploadingDoc, setUploadingDoc] = useState(false);
+  const [docPreviewUrl, setDocPreviewUrl] = useState<string | null>(null);
+  const [loadingDocPreview, setLoadingDocPreview] = useState(false);
+
+  // Complaint state
+  const [complaintTarget, setComplaintTarget] = useState<{
+    targetUserId: string;
+    targetUserName: string;
+    requestId?: string;
+  } | null>(null);
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -83,7 +103,55 @@ export const WorkerDashboard: React.FC = () => {
     }
   };
 
+  const handleUploadDocument = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!docFile) {
+      setError('Please select an identity document to upload.');
+      return;
+    }
+
+    setUploadingDoc(true);
+    setError(null);
+    try {
+      const formData = new FormData();
+      formData.append('document', docFile);
+      formData.append('documentType', 'AADHAAR');
+      if (maskedAadhaar) {
+        formData.append('maskedAadhaar', maskedAadhaar.trim());
+      }
+
+      const res = await api.uploadIdentityDocument(formData);
+      if (res.success) {
+        setSuccessMsg('Identity document submitted successfully for admin verification!');
+        setDocFile(null);
+        setMaskedAadhaar('');
+        await loadWorkerData();
+        setTimeout(() => setSuccessMsg(null), 4000);
+      }
+    } catch (err: any) {
+      setError(err.message || 'Failed to upload document.');
+    } finally {
+      setUploadingDoc(false);
+    }
+  };
+
+  const handleViewOwnDocument = async () => {
+    setLoadingDocPreview(true);
+    try {
+      const url = await api.getMyDocumentBlob();
+      window.open(url, '_blank');
+    } catch (err: any) {
+      setError(err.message || 'Could not retrieve identity document.');
+    } finally {
+      setLoadingDocPreview(false);
+    }
+  };
+
   const handleExpressInterest = async (taskId: string) => {
+    if (profile?.verificationStatus !== 'VERIFIED') {
+      setError('Your identity document must be verified by an administrator before expressing interest in jobs.');
+      return;
+    }
     setLoading(true);
     try {
       const res = await api.expressInterest(taskId, interestMessage || undefined);
@@ -138,6 +206,8 @@ export const WorkerDashboard: React.FC = () => {
     return (t.category || '').toLowerCase() === selectedCategory.toLowerCase();
   });
 
+  const isVerified = profile?.verificationStatus === 'VERIFIED';
+
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
       {/* Worker Profile Header & Availability Toggle */}
@@ -153,6 +223,8 @@ export const WorkerDashboard: React.FC = () => {
                   ? 'bg-emerald-100 text-emerald-800'
                   : profile?.verificationStatus === 'REJECTED'
                   ? 'bg-red-100 text-red-800'
+                  : profile?.verificationStatus === 'RESUBMISSION_REQUIRED'
+                  ? 'bg-orange-100 text-orange-800'
                   : 'bg-amber-100 text-amber-800'
               }`}
             >
@@ -160,9 +232,18 @@ export const WorkerDashboard: React.FC = () => {
             </span>
           </div>
 
-          <p className="text-xs text-slate-500">
-            Service Area: <strong className="text-slate-800">{profile?.serviceArea || 'Bengaluru'}</strong> • Experience: <strong className="text-slate-800">{profile?.experienceYears || 1} yrs</strong> • Jobs Done: <strong className="text-slate-800">{profile?.completedJobsCount || 0}</strong>
-          </p>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500">
+            <span>Service Area: <strong className="text-slate-800">{profile?.serviceArea || 'Bengaluru'}</strong></span>
+            <span>•</span>
+            <span>Experience: <strong className="text-slate-800">{profile?.experienceYears || 1} yrs</strong></span>
+            <span>•</span>
+            <span>Completed Jobs: <strong className="text-slate-800">{profile?.completedJobsCount || 0}</strong></span>
+            <span>•</span>
+            <span className="inline-flex items-center text-amber-600 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-md font-bold">
+              <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400 mr-1" />
+              {typeof profile?.averageRating === 'number' ? profile.averageRating.toFixed(1) : '5.0'} / 5.0
+            </span>
+          </div>
 
           <div className="flex flex-wrap gap-1.5 pt-1">
             {profile?.skills.map((skill, idx) => (
@@ -203,6 +284,124 @@ export const WorkerDashboard: React.FC = () => {
               ? 'Mark Unavailable'
               : 'Mark Available'}
           </button>
+        </div>
+      </div>
+
+      {/* VERIFICATION & IDENTITY DOCUMENT SECTION */}
+      <div className="bg-white rounded-3xl p-6 sm:p-8 shadow-sm border border-slate-200 space-y-4">
+        <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+          <div className="flex items-center space-x-2">
+            <ShieldCheck className="w-5 h-5 text-brand-600" />
+            <h2 className="text-base font-black text-slate-900 tracking-tight">Identity Verification & Compliance</h2>
+          </div>
+          <span
+            className={`text-xs font-bold px-3 py-1 rounded-full ${
+              isVerified
+                ? 'bg-emerald-100 text-emerald-800'
+                : 'bg-amber-100 text-amber-800'
+            }`}
+          >
+            {isVerified ? '✓ Identity Verified' : 'Action Required: Verification Pending'}
+          </span>
+        </div>
+
+        {!isVerified && (
+          <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 text-xs text-amber-900 space-y-2">
+            <div className="flex items-start space-x-2">
+              <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+              <div>
+                <p className="font-bold">
+                  {profile?.verificationStatus === 'RESUBMISSION_REQUIRED'
+                    ? 'Resubmission Required by Administrator'
+                    : profile?.verificationStatus === 'REJECTED'
+                    ? 'Verification Rejected'
+                    : 'Pending Administrator Verification'}
+                </p>
+                <p className="mt-1 text-amber-800">
+                  {profile?.verificationNotes
+                    ? `Admin Note: "${profile.verificationNotes}"`
+                    : 'To protect households and maintain safety standards, your account must be verified by an administrator before customer jobs can be confirmed or OTPs verified.'}
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Identity Document submission / status */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start pt-2">
+          {/* Privacy Notice */}
+          <div className="bg-blue-50/70 border border-blue-200 rounded-2xl p-4 text-xs text-blue-900 space-y-2">
+            <div className="flex items-center space-x-1.5 font-bold text-blue-950">
+              <Info className="w-4 h-4 text-blue-600 shrink-0" />
+              <span>Aadhaar Document Privacy Policy</span>
+            </div>
+            <p className="text-[11px] leading-relaxed">
+              <strong>Purpose:</strong> Used strictly by authorized platform administrators to verify identity and enable service dispatching.
+            </p>
+            <p className="text-[11px] leading-relaxed">
+              <strong>Storage & Access:</strong> Stored securely in a private, access-controlled directory. Never shared with customers or third parties.
+            </p>
+            <p className="text-[11px] leading-relaxed">
+              <strong>Masked Aadhaar:</strong> In compliance with UIDAI recommendations, you may upload a masked Aadhaar with only the last 4 digits visible.
+            </p>
+            {profile?.identityDocumentSubmitted && (
+              <div className="pt-2">
+                <button
+                  type="button"
+                  onClick={handleViewOwnDocument}
+                  disabled={loadingDocPreview}
+                  className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs rounded-xl flex items-center space-x-1.5 transition-colors shadow-sm"
+                >
+                  <Eye className="w-3.5 h-3.5" />
+                  <span>{loadingDocPreview ? 'Opening...' : 'View My Uploaded Document'}</span>
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Upload Form */}
+          {(!isVerified || profile?.verificationStatus === 'RESUBMISSION_REQUIRED') && (
+            <form onSubmit={handleUploadDocument} className="bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-3">
+              <h3 className="text-xs font-bold text-slate-900">
+                {profile?.identityDocumentSubmitted ? 'Upload Replacement / Clearer Document' : 'Submit Identity Document'}
+              </h3>
+
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                  Document File (JPEG, PNG, WebP, PDF &le; 5MB)
+                </label>
+                <input
+                  type="file"
+                  onChange={e => e.target.files && setDocFile(e.target.files[0])}
+                  accept="image/jpeg,image/png,image/webp,application/pdf"
+                  className="w-full text-xs text-slate-600 file:mr-3 file:py-1.5 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-brand-50 file:text-brand-700 hover:file:bg-brand-100"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                  Masked Aadhaar Last 4 Digits
+                </label>
+                <input
+                  type="text"
+                  maxLength={4}
+                  value={maskedAadhaar}
+                  onChange={e => setMaskedAadhaar(e.target.value.replace(/\D/g, ''))}
+                  placeholder="e.g. 9812"
+                  className="w-full text-xs px-3 py-2 rounded-xl border border-slate-300 focus:ring-2 focus:ring-brand-500 outline-none bg-white"
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={uploadingDoc || !docFile}
+                className="w-full py-2 bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white font-bold text-xs rounded-xl transition-all shadow-sm flex items-center justify-center space-x-1.5"
+              >
+                <Upload className="w-3.5 h-3.5" />
+                <span>{uploadingDoc ? 'Submitting to Private Storage...' : 'Submit Document for Review'}</span>
+              </button>
+            </form>
+          )}
         </div>
       </div>
 
@@ -271,7 +470,7 @@ export const WorkerDashboard: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Status action buttons */}
+                {/* Status action buttons & report customer */}
                 <div className="flex items-center space-x-2 shrink-0">
                   {task.status === 'ASSIGNED' && (
                     <button
@@ -300,6 +499,21 @@ export const WorkerDashboard: React.FC = () => {
                       Awaiting Customer Approval
                     </span>
                   )}
+
+                  {/* Report Customer */}
+                  <button
+                    onClick={() =>
+                      setComplaintTarget({
+                        targetUserId: task.customerId,
+                        targetUserName: task.customerName || 'Customer',
+                        requestId: task.id,
+                      })
+                    }
+                    className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-colors"
+                    title="Report Customer / File Issue"
+                  >
+                    <ShieldAlert className="w-4 h-4" />
+                  </button>
                 </div>
               </div>
             ))}
@@ -423,7 +637,13 @@ export const WorkerDashboard: React.FC = () => {
 
                   {/* Enter OTP button */}
                   <button
-                    onClick={() => setSelectedTaskForOtp(task)}
+                    onClick={() => {
+                      if (!isVerified) {
+                        setError('You cannot verify customer OTPs until your account is verified by an administrator.');
+                        return;
+                      }
+                      setSelectedTaskForOtp(task);
+                    }}
                     className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-sm transition-all flex items-center space-x-1.5"
                   >
                     <KeyRound className="w-3.5 h-3.5" />
@@ -449,22 +669,40 @@ export const WorkerDashboard: React.FC = () => {
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {reviews.map(rev => (
-              <div key={rev.id} className="bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="font-bold text-xs text-slate-900">{rev.customerName || 'Customer'}</span>
-                  <div className="flex text-amber-400">
-                    {[...Array(rev.rating)].map((_, i) => (
-                      <Star key={i} className="w-3.5 h-3.5 fill-amber-400" />
-                    ))}
+            {reviews.map(rev => {
+              const reviewConfig: Record<string, { label: string; bg: string; text: string; emoji: string }> = {
+                'very good': { label: 'Very Good', bg: 'bg-emerald-100 border-emerald-300', text: 'text-emerald-800', emoji: '😄' },
+                'good': { label: 'Good', bg: 'bg-emerald-50 border-emerald-200', text: 'text-emerald-700', emoji: '😊' },
+                'ok': { label: 'OK', bg: 'bg-amber-50 border-amber-200', text: 'text-amber-800', emoji: '😐' },
+                'bad': { label: 'Bad', bg: 'bg-orange-50 border-orange-200', text: 'text-orange-800', emoji: '🙁' },
+                'very bad': { label: 'Very Bad', bg: 'bg-red-50 border-red-200', text: 'text-red-800', emoji: '😞' },
+              };
+              const reviewMeta = rev.review ? reviewConfig[rev.review.toLowerCase()] : null;
+
+              return (
+                <div key={rev.id} className="bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-2">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="font-bold text-xs text-slate-900">{rev.customerName || 'Verified Customer'}</span>
+                    <div className="flex items-center space-x-2">
+                      {reviewMeta && (
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md border ${reviewMeta.bg} ${reviewMeta.text}`}>
+                          {reviewMeta.emoji} {reviewMeta.label}
+                        </span>
+                      )}
+                      <div className="flex text-amber-400">
+                        {[...Array(rev.rating || 5)].map((_, i) => (
+                          <Star key={i} className="w-3.5 h-3.5 fill-amber-400" />
+                        ))}
+                      </div>
+                    </div>
                   </div>
+                  {rev.comment && <p className="text-xs text-slate-600 italic">"{rev.comment}"</p>}
+                  <span className="text-[10px] text-slate-400 block">
+                    {new Date(rev.createdAt).toLocaleDateString()}
+                  </span>
                 </div>
-                <p className="text-xs text-slate-600 italic">"{rev.comment}"</p>
-                <span className="text-[10px] text-slate-400 block">
-                  {new Date(rev.createdAt).toLocaleDateString()}
-                </span>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
@@ -480,6 +718,22 @@ export const WorkerDashboard: React.FC = () => {
           onConfirmed={async () => {
             await loadWorkerData();
             setSelectedTaskForOtp(null);
+          }}
+        />
+      )}
+
+      {/* Complaint Modal */}
+      {complaintTarget && (
+        <ComplaintModal
+          isOpen={Boolean(complaintTarget)}
+          onClose={() => setComplaintTarget(null)}
+          targetUserId={complaintTarget.targetUserId}
+          targetUserName={complaintTarget.targetUserName}
+          targetRole="CUSTOMER"
+          requestId={complaintTarget.requestId}
+          onSubmitted={() => {
+            setSuccessMsg('Complaint filed successfully and sent to moderation.');
+            setTimeout(() => setSuccessMsg(null), 3000);
           }}
         />
       )}

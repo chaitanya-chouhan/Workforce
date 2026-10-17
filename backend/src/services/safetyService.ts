@@ -33,7 +33,7 @@ const DANGER_PATTERNS = [
   },
   {
     category: 'ELECTRICAL_HAZARD' as const,
-    regex: /\b(electric(al)?\s*shock|spark(ing|s)?|exposed\s*wire|burning\s*wire|smoke\s*from\s*(socket|switch|board|appliance)|short\s*circuit|buzzing\s*breaker|water\s*in\s*(switch|outlet|panel))\b/i,
+    regex: /\b(electric(al)?\s*shock|spark(ing|s|ed)?|exposed\s*wire(s)?|burning\s*(\w+\s*)?wire(s)?|smoke\s*from\s*(socket|switch|board|appliance)|short\s*circuit|buzzing\s*breaker|water\s*in\s*(switch|outlet|panel))\b/i,
     severity: 'high' as const,
     warnings: [
       'ELECTRICAL SHOCK & FIRE HAZARD: Exposed voltage, sparking, or active short-circuit.',
