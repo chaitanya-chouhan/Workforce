@@ -45,9 +45,11 @@ export const WorkerDashboard: React.FC = () => {
 
   // Document upload state
   const [docFile, setDocFile] = useState<File | null>(null);
+  const [selectedDocPreview, setSelectedDocPreview] = useState<string | null>(null);
+  const [selectedDocType, setSelectedDocType] = useState<'image' | 'pdf' | null>(null);
+  const [selectedDocSize, setSelectedDocSize] = useState<string | null>(null);
   const [maskedAadhaar, setMaskedAadhaar] = useState('');
   const [uploadingDoc, setUploadingDoc] = useState(false);
-  const [docPreviewUrl, setDocPreviewUrl] = useState<string | null>(null);
   const [loadingDocPreview, setLoadingDocPreview] = useState(false);
 
   // Complaint state
@@ -103,6 +105,39 @@ export const WorkerDashboard: React.FC = () => {
     }
   };
 
+  const handleSelectDocFile = (file: File) => {
+    setError(null);
+    if (file.size > 5 * 1024 * 1024) {
+      setError('Document exceeds the 5MB size limit. Please select a smaller file.');
+      return;
+    }
+    const allowed = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
+    if (!allowed.includes(file.type)) {
+      setError('Invalid file format. Only JPEG, PNG, WebP images and PDF documents are supported.');
+      return;
+    }
+
+    if (selectedDocPreview) {
+      URL.revokeObjectURL(selectedDocPreview);
+    }
+
+    const isPdf = file.type === 'application/pdf';
+    setSelectedDocType(isPdf ? 'pdf' : 'image');
+    setSelectedDocPreview(URL.createObjectURL(file));
+    setSelectedDocSize((file.size / (1024 * 1024)).toFixed(2) + ' MB');
+    setDocFile(file);
+  };
+
+  const handleClearSelectedDoc = () => {
+    if (selectedDocPreview) {
+      URL.revokeObjectURL(selectedDocPreview);
+    }
+    setDocFile(null);
+    setSelectedDocPreview(null);
+    setSelectedDocType(null);
+    setSelectedDocSize(null);
+  };
+
   const handleUploadDocument = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!docFile) {
@@ -123,8 +158,9 @@ export const WorkerDashboard: React.FC = () => {
       const res = await api.uploadIdentityDocument(formData);
       if (res.success) {
         setSuccessMsg('Identity document submitted successfully for admin verification!');
-        setDocFile(null);
+        handleClearSelectedDoc();
         setMaskedAadhaar('');
+        await refreshProfile();
         await loadWorkerData();
         setTimeout(() => setSuccessMsg(null), 4000);
       }
@@ -370,12 +406,47 @@ export const WorkerDashboard: React.FC = () => {
                 <label className="block text-[11px] font-semibold text-slate-700 mb-1">
                   Document File (JPEG, PNG, WebP, PDF &le; 5MB)
                 </label>
-                <input
-                  type="file"
-                  onChange={e => e.target.files && setDocFile(e.target.files[0])}
-                  accept="image/jpeg,image/png,image/webp,application/pdf"
-                  className="w-full text-xs text-slate-600 file:mr-3 file:py-1.5 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-brand-50 file:text-brand-700 hover:file:bg-brand-100"
-                />
+                {!docFile ? (
+                  <input
+                    type="file"
+                    onChange={e => e.target.files && e.target.files[0] && handleSelectDocFile(e.target.files[0])}
+                    accept="image/jpeg,image/png,image/webp,application/pdf"
+                    className="w-full text-xs text-slate-600 file:mr-3 file:py-1.5 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-brand-50 file:text-brand-700 hover:file:bg-brand-100 cursor-pointer"
+                  />
+                ) : (
+                  <div className="bg-white border border-slate-200 rounded-xl p-3 space-y-2">
+                    {selectedDocType === 'image' && selectedDocPreview && (
+                      <div className="relative rounded-lg overflow-hidden border border-slate-100 bg-slate-50 p-1 flex justify-center">
+                        <img
+                          src={selectedDocPreview}
+                          alt="Document Preview"
+                          className="max-h-40 rounded-lg object-contain shadow-xs"
+                        />
+                      </div>
+                    )}
+                    {selectedDocType === 'pdf' && (
+                      <div className="flex items-center space-x-2 py-2">
+                        <FileText className="w-8 h-8 text-rose-500 shrink-0" />
+                        <div className="min-w-0 flex-1">
+                          <span className="text-xs font-bold text-slate-800 truncate block">{docFile.name}</span>
+                          <span className="text-[10px] text-slate-500">PDF Document ({selectedDocSize})</span>
+                        </div>
+                      </div>
+                    )}
+                    <div className="flex items-center justify-between pt-1 border-t border-slate-100 text-xs">
+                      <span className="text-slate-600 font-medium truncate max-w-[200px]">
+                        {docFile.name} {selectedDocSize ? `(${selectedDocSize})` : ''}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={handleClearSelectedDoc}
+                        className="text-xs text-rose-600 font-bold hover:underline"
+                      >
+                        Change / Remove
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div>

@@ -98,24 +98,24 @@ export const ComplaintModal: React.FC<ComplaintModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
-      <div className="bg-white w-full max-w-lg rounded-3xl shadow-2xl border border-slate-200 overflow-hidden">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fade-in">
+      <div className="bg-[#171B20] w-full max-w-lg rounded-3xl shadow-2xl border border-[#272D34] overflow-hidden">
         {/* Header */}
-        <div className="px-6 py-4 bg-red-50 border-b border-red-100 flex items-center justify-between">
-          <div className="flex items-center space-x-2">
-            <div className="w-8 h-8 rounded-xl bg-red-600 text-white flex items-center justify-center shadow-sm">
+        <div className="px-6 py-4 bg-[#090B0E] border-b border-[#272D34] flex items-center justify-between">
+          <div className="flex items-center space-x-2.5">
+            <div className="w-8 h-8 rounded-xl bg-red-950/60 border border-red-800/80 text-red-400 flex items-center justify-center shadow-sm">
               <ShieldAlert className="w-4 h-4" />
             </div>
             <div>
-              <h3 className="text-sm font-black text-red-950">
+              <h3 className="text-sm font-bold text-[#E7EAEE]">
                 File a Complaint against {targetRole === 'WORKER' ? 'Worker' : 'Customer'}
               </h3>
-              <p className="text-[11px] text-red-700">Target: {targetUserName}</p>
+              <p className="text-[11px] text-[#8A94A6]">Target: <span className="text-[#E7EAEE] font-medium">{targetUserName}</span></p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
+            className="p-1.5 rounded-xl text-[#8A94A6] hover:text-[#E7EAEE] hover:bg-[#171B20] transition-colors"
           >
             <X className="w-5 h-5" />
           </button>
@@ -125,32 +125,32 @@ export const ComplaintModal: React.FC<ComplaintModalProps> = ({
         <div className="p-6">
           {success ? (
             <div className="text-center py-8 space-y-3">
-              <div className="w-12 h-12 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto">
+              <div className="w-12 h-12 rounded-2xl bg-emerald-950/60 border border-emerald-800/60 text-emerald-400 flex items-center justify-center mx-auto">
                 <CheckCircle2 className="w-6 h-6" />
               </div>
-              <h4 className="text-sm font-bold text-slate-900">Complaint Submitted Successfully</h4>
-              <p className="text-xs text-slate-500 max-w-sm mx-auto">
+              <h4 className="text-sm font-bold text-[#E7EAEE]">Complaint Submitted Successfully</h4>
+              <p className="text-xs text-[#8A94A6] max-w-sm mx-auto">
                 Your report has been received and escalated to our administrator moderation queue for review.
               </p>
             </div>
           ) : (
             <form onSubmit={handleSubmit} className="space-y-4">
               {error && (
-                <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-xs text-red-700 flex items-start space-x-2">
-                  <AlertCircle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
+                <div className="bg-red-950/40 border border-red-800/60 rounded-xl p-3 text-xs text-red-300 flex items-start space-x-2">
+                  <AlertCircle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
                   <span>{error}</span>
                 </div>
               )}
 
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Issue Category</label>
+                <label className="block text-xs font-semibold text-[#8A94A6] mb-1">Issue Category</label>
                 <select
                   value={category}
                   onChange={e => setCategory(e.target.value)}
-                  className="w-full text-xs px-3 py-2.5 rounded-xl border border-slate-300 focus:ring-2 focus:ring-red-500 outline-none bg-white font-medium"
+                  className="w-full text-xs px-3 py-2.5 rounded-xl border border-[#272D34] focus:border-[#FF6A00] focus:ring-1 focus:ring-[#FF6A00] outline-none bg-[#090B0E] text-[#E7EAEE] font-medium"
                 >
                   {CATEGORIES.map(cat => (
-                    <option key={cat.value} value={cat.value}>
+                    <option key={cat.value} value={cat.value} className="bg-[#171B20] text-[#E7EAEE]">
                       {cat.label}
                     </option>
                   ))}
@@ -158,19 +158,19 @@ export const ComplaintModal: React.FC<ComplaintModalProps> = ({
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Subject</label>
+                <label className="block text-xs font-semibold text-[#8A94A6] mb-1">Subject</label>
                 <input
                   type="text"
                   required
                   value={subject}
                   onChange={e => setSubject(e.target.value)}
                   placeholder="Summary of incident..."
-                  className="w-full text-xs px-3 py-2.5 rounded-xl border border-slate-300 focus:ring-2 focus:ring-red-500 outline-none"
+                  className="w-full text-xs px-3 py-2.5 rounded-xl border border-[#272D34] focus:border-[#FF6A00] focus:ring-1 focus:ring-[#FF6A00] outline-none bg-[#090B0E] text-[#E7EAEE] placeholder:text-[#657080]"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                <label className="block text-xs font-semibold text-[#8A94A6] mb-1">
                   Detailed Explanation
                 </label>
                 <textarea
@@ -179,17 +179,17 @@ export const ComplaintModal: React.FC<ComplaintModalProps> = ({
                   value={description}
                   onChange={e => setDescription(e.target.value)}
                   placeholder="Describe exactly what happened with dates, specifics, and any agreements breached..."
-                  className="w-full text-xs p-3 rounded-xl border border-slate-300 focus:ring-2 focus:ring-red-500 outline-none"
+                  className="w-full text-xs p-3 rounded-xl border border-[#272D34] focus:border-[#FF6A00] focus:ring-1 focus:ring-[#FF6A00] outline-none bg-[#090B0E] text-[#E7EAEE] placeholder:text-[#657080]"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                <label className="block text-xs font-semibold text-[#8A94A6] mb-1">
                   Attach Evidence (Optional, &le;5MB JPEG/PNG/PDF)
                 </label>
-                <label className="border-2 border-dashed border-slate-300 hover:border-red-400 rounded-xl p-3 flex flex-col items-center justify-center cursor-pointer bg-slate-50 transition-colors">
-                  <Upload className="w-4 h-4 text-slate-400 mb-1" />
-                  <span className="text-xs text-slate-600 text-center font-medium">
+                <label className="border border-dashed border-[#272D34] hover:border-[#FF6A00]/50 rounded-xl p-3 flex flex-col items-center justify-center cursor-pointer bg-[#090B0E] transition-colors">
+                  <Upload className="w-4 h-4 text-[#FF6A00] mb-1" />
+                  <span className="text-xs text-[#E7EAEE] text-center font-medium">
                     {file ? file.name : 'Upload supporting photo or document'}
                   </span>
                   <input
@@ -199,16 +199,16 @@ export const ComplaintModal: React.FC<ComplaintModalProps> = ({
                     className="hidden"
                   />
                 </label>
-                <p className="text-[10px] text-slate-400 mt-1">
+                <p className="text-[10px] text-[#657080] mt-1">
                   Evidence is stored in private, access-controlled storage and only visible to administrators.
                 </p>
               </div>
 
-              <div className="flex items-center justify-end space-x-3 pt-2 border-t border-slate-100">
+              <div className="flex items-center justify-end space-x-3 pt-2 border-t border-[#272D34]">
                 <button
                   type="button"
                   onClick={onClose}
-                  className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-100"
+                  className="px-4 py-2 rounded-xl text-xs font-semibold text-[#8A94A6] hover:text-[#E7EAEE] hover:bg-[#272D34] transition-colors"
                 >
                   Cancel
                 </button>

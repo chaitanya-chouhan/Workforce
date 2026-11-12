@@ -6,7 +6,7 @@ import { authenticateToken } from '../middleware/authMiddleware';
 import { requireRole, requireActiveAccount } from '../middleware/roleMiddleware';
 import { WorkerProfile, ServiceRequest, TaskInterest, WorkerDocument } from '../types';
 import { findMatchingWorkers } from '../services/matchingService';
-import { uploadIdentityDocument, removePrivateFile } from '../config/storage';
+import { uploadIdentityDocument, removePrivateFile, verifyFileSignature } from '../config/storage';
 
 const router = Router();
 
@@ -85,6 +85,16 @@ router.post(
         return;
       }
 
+      // Verify file signature magic bytes to prevent spoofing
+      if (!verifyFileSignature(req.file.path, req.file.mimetype)) {
+        removePrivateFile(req.file.path);
+        res.status(400).json({
+          success: false,
+          error: 'Uploaded file contents do not match the expected file signature. Please upload a genuine JPEG, PNG, WebP image or PDF document.',
+        });
+        return;
+      }
+
       const db = getDb();
       const workerId = req.user!.uid;
       const maskedAadhaar = (req.body.maskedAadhaar || '').trim();
@@ -119,13 +129,13 @@ router.post(
 
       // Update worker profile
       const workerRef = db.collection('workerProfiles').doc(workerId);
-      await workerRef.update({
+      await workerRef.set({
         identityDocumentId: docRef.id,
         identityDocumentSubmitted: true,
         ...(maskedAadhaar ? { maskedAadhaar } : {}),
         verificationStatus: 'PENDING',
         updatedAt: now,
-      });
+      }, { merge: true });
 
       res.status(201).json({
         success: true,
@@ -149,20 +159,38 @@ router.get(
       const db = getDb();
       const workerId = req.user!.uid;
 
-      const snap = await db.collection('workerDocuments').where('workerId', '==', workerId).limit(1).get();
-      if (snap.empty) {
-        res.status(404).json({ success: false, error: 'No identity document on file.' });
-        return;
+      let docData: WorkerDocument | null = null;
+      const workerProfileSnap = await db.collection('workerProfiles').doc(workerId).get();
+      if (workerProfileSnap.exists) {
+        const wp = workerProfileSnap.data() as WorkerProfile;
+        if (wp.identityDocumentId) {
+          const directDoc = await db.collection('workerDocuments').doc(wp.identityDocumentId).get();
+          if (directDoc.exists) {
+            docData = directDoc.data() as WorkerDocument;
+          }
+        }
       }
 
-      const docData = snap.docs[0].data() as WorkerDocument;
+      if (!docData) {
+        const snap = await db.collection('workerDocuments').where('workerId', '==', workerId).get();
+        if (snap.empty) {
+          res.status(404).json({ success: false, error: 'No identity document on file.' });
+          return;
+        }
+        const sorted = snap.docs
+          .map(d => d.data() as WorkerDocument)
+          .sort((a, b) => new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime());
+        docData = sorted[0];
+      }
+
       if (!fs.existsSync(docData.storagePath)) {
         res.status(404).json({ success: false, error: 'Document file not found in storage.' });
         return;
       }
 
+      const safeFileName = (docData.originalFileName || 'identity_document').replace(/[^a-zA-Z0-9._-]/g, '_');
       res.setHeader('Content-Type', docData.mimeType || 'application/octet-stream');
-      res.setHeader('Content-Disposition', `inline; filename="${docData.originalFileName || 'identity_document'}"`);
+      res.setHeader('Content-Disposition', `inline; filename="${safeFileName}"`);
       res.sendFile(docData.storagePath);
     } catch (err: any) {
       res.status(500).json({ success: false, error: err.message });

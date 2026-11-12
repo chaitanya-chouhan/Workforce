@@ -58,15 +58,15 @@ const STEPS = [
 
 export const HowItWorksPage: React.FC = () => {
   return (
-    <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-16 space-y-16">
+    <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-16 space-y-16 bg-[#090B0E] text-[#E7EAEE]">
       <div className="text-center space-y-4 max-w-3xl mx-auto">
-        <span className="text-xs font-bold uppercase tracking-wider text-brand-600 bg-brand-50 px-3 py-1 rounded-full">
+        <span className="text-xs font-bold uppercase tracking-wider text-[#FF9A3C] bg-[#171B20] border border-[#FF6A00]/30 px-3 py-1 rounded-full">
           Workflow Architecture
         </span>
-        <h1 className="text-3xl sm:text-5xl font-black text-slate-900 tracking-tight">
+        <h1 className="text-3xl sm:text-5xl font-black text-[#E7EAEE] tracking-tight">
           How WorkForce Operates
         </h1>
-        <p className="text-slate-600 text-sm sm:text-base leading-relaxed">
+        <p className="text-[#8A94A6] text-sm sm:text-base leading-relaxed">
           From conversational problem interpretation to customer-controlled cryptographic assignment, here is how WorkForce guarantees safety and trust.
         </p>
       </div>
@@ -78,23 +78,23 @@ export const HowItWorksPage: React.FC = () => {
           return (
             <div
               key={idx}
-              className="bg-white border border-slate-200 rounded-3xl p-6 sm:p-8 shadow-sm flex flex-col md:flex-row items-start md:items-center gap-6 hover:border-brand-300 transition-colors"
+              className="bg-[#171B20] border border-[#272D34] hover:border-[#353D47] rounded-2xl p-6 sm:p-8 shadow-xl flex flex-col md:flex-row items-start md:items-center gap-6 transition-all"
             >
               <div className="flex items-center space-x-4 shrink-0">
-                <span className="text-3xl font-black text-brand-600/40">{s.step}</span>
-                <div className="w-12 h-12 rounded-2xl bg-brand-50 text-brand-600 flex items-center justify-center">
+                <span className="text-3xl font-black text-[#FF6A00]/40">{s.step}</span>
+                <div className="w-12 h-12 rounded-xl bg-[#090B0E] border border-[#272D34] text-[#FF6A00] flex items-center justify-center">
                   <Icon className="w-6 h-6" />
                 </div>
               </div>
 
               <div className="flex-1 space-y-2">
-                <div className="flex items-center space-x-3">
-                  <h3 className="font-bold text-base sm:text-lg text-slate-900">{s.title}</h3>
-                  <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-md bg-slate-100 text-slate-600">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h3 className="font-bold text-base sm:text-lg text-[#E7EAEE]">{s.title}</h3>
+                  <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-md bg-[#272D34] text-[#8A94A6] border border-[#353D47]">
                     {s.badge}
                   </span>
                 </div>
-                <p className="text-xs sm:text-sm text-slate-600 leading-relaxed">{s.desc}</p>
+                <p className="text-xs sm:text-sm text-[#8A94A6] leading-relaxed">{s.desc}</p>
               </div>
             </div>
           );
@@ -104,7 +104,7 @@ export const HowItWorksPage: React.FC = () => {
       <div className="text-center pt-8">
         <Link
           to="/register"
-          className="inline-flex items-center space-x-2 px-8 py-3.5 bg-brand-600 hover:bg-brand-700 text-white font-semibold text-sm rounded-xl shadow-md transition-all"
+          className="inline-flex items-center space-x-2 px-8 py-3.5 bg-[#FF6A00] hover:bg-[#FF9A3C] text-black font-semibold text-sm rounded-xl shadow-[0_0_20px_rgba(255,106,0,0.25)] transition-all"
         >
           <span>Experience WorkForce Today</span>
           <ArrowRight className="w-4 h-4" />

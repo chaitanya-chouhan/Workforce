@@ -149,6 +149,34 @@ export const CustomerDashboard: React.FC = () => {
     }
   }, [selectedRequestId]);
 
+  // Live polling for requests awaiting worker response or OTP confirmation
+  useEffect(() => {
+    if (!selectedRequestId) return;
+    if (
+      currentRequest?.status !== 'OPEN_FOR_WORKERS' &&
+      currentRequest?.status !== 'AWAITING_ASSIGNMENT_CONFIRMATION'
+    ) {
+      return;
+    }
+
+    const intervalId = setInterval(() => {
+      api.getRequest(selectedRequestId)
+        .then(res => {
+          if (res.success && res.request) {
+            setCurrentRequest(res.request);
+            if (res.aiAnalysis) setCurrentAiAnalysis(res.aiAnalysis);
+            if (res.interestedWorkers) setInterestedWorkers(res.interestedWorkers);
+            setActiveAssignment(res.assignment || null);
+          }
+        })
+        .catch(() => {
+          // ignore silent polling errors
+        });
+    }, 3000);
+
+    return () => clearInterval(intervalId);
+  }, [selectedRequestId, currentRequest?.status]);
+
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -239,7 +267,7 @@ export const CustomerDashboard: React.FC = () => {
       return;
     }
 
-    // 2. Call Gemma 4 Analysis endpoint with optional image
+    // 2. Call AI Diagnostic endpoint with optional image
     if (newId) {
       try {
         const formData = new FormData();
@@ -250,7 +278,7 @@ export const CustomerDashboard: React.FC = () => {
         const analyzeRes = await api.analyzeRequest(newId, formData);
         if (!analyzeRes.success) {
           setError(
-            `Service request created (Status: Submitted), but Gemma 4 diagnostic returned: ${
+            `Service request created (Status: Submitted), but diagnostic interpretation returned: ${
               analyzeRes.error || 'Unknown error'
             }`
           );
@@ -259,7 +287,7 @@ export const CustomerDashboard: React.FC = () => {
         await fetchRequests();
       } catch (aiErr: any) {
         setError(
-          `Service request created (Status: Submitted), but Gemma 4 analysis failed: ${aiErr.message}`
+          `Service request created (Status: Submitted), but AI-powered analysis failed: ${aiErr.message}`
         );
         await fetchRequestDetails(newId);
         await fetchRequests();
@@ -277,13 +305,13 @@ export const CustomerDashboard: React.FC = () => {
       const formData = new FormData();
       const res = await api.analyzeRequest(requestId, formData);
       if (!res.success) {
-        setError(res.error || 'Failed to run Gemma 4 diagnostic.');
+        setError(res.error || 'Failed to run diagnostic interpretation.');
       } else {
         await fetchRequestDetails(requestId);
         await fetchRequests();
       }
     } catch (err: any) {
-      setError(`Gemma 4 Diagnostic error: ${err.message}`);
+      setError(`Diagnostic interpretation error: ${err.message}`);
     } finally {
       setAnalyzing(false);
     }
@@ -345,6 +373,10 @@ export const CustomerDashboard: React.FC = () => {
     try {
       const res = await api.declineTaskInterest(selectedRequestId, workerId);
       if (res.success) {
+        // Optimistically mark worker interest as rejected immediately
+        setInterestedWorkers(prev =>
+          prev.map(iw => (iw.workerId === workerId ? { ...iw, status: 'REJECTED' } : iw))
+        );
         await fetchRequestDetails(selectedRequestId);
       }
     } catch (err: any) {
@@ -361,6 +393,7 @@ export const CustomerDashboard: React.FC = () => {
     try {
       const res = await api.cancelAssignment(selectedRequestId);
       if (res.success) {
+        setActiveAssignment(null);
         await fetchRequestDetails(selectedRequestId);
         await fetchRequests();
       }
@@ -370,6 +403,44 @@ export const CustomerDashboard: React.FC = () => {
       setLoading(false);
     }
   };
+
+  // Active technicians who have taken interest and are pending response
+  const activeInterestedWorkers = interestedWorkers.filter(
+    iw => iw.status === 'PENDING'
+  );
+
+  // Set of worker IDs who have been declined by the customer
+  const declinedWorkerIds = new Set(
+    interestedWorkers.filter(iw => iw.status === 'REJECTED').map(iw => iw.workerId)
+  );
+
+  // Filter out any matching workers that have been declined
+  const visibleMatchingWorkers = matchingWorkers.filter(
+    sw => !declinedWorkerIds.has(sw.worker.userId)
+  );
+
+  // Is task assigned or completed?
+  const isTaskAssigned = Boolean(
+    currentRequest &&
+      ['ASSIGNED', 'IN_PROGRESS', 'COMPLETION_PENDING_CONFIRMATION', 'COMPLETED'].includes(
+        currentRequest.status
+      )
+  );
+
+  // Is an assignment currently pending OTP verification?
+  const isAssignmentPendingOtp = Boolean(
+    activeAssignment && activeAssignment.status === 'PENDING_OTP'
+  );
+
+  // Available count: increases when workers take interest in the issue, decreases as customer declines, 0 when assigned
+  const availableCount = isTaskAssigned ? 0 : activeInterestedWorkers.length;
+
+  // Show "Technicians Interested in Your Request" only if task is open, no OTP pending or assignment confirmed, and there are active interested workers
+  const showInterestedWorkersBox =
+    currentRequest?.status === 'OPEN_FOR_WORKERS' &&
+    !isAssignmentPendingOtp &&
+    !isTaskAssigned &&
+    activeInterestedWorkers.length > 0;
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
@@ -741,22 +812,31 @@ export const CustomerDashboard: React.FC = () => {
                 </div>
               )}
 
-              {/* Gemma 4 Diagnostic Analysis Section */}
+              {/* AI Diagnostic Analysis Section */}
               {currentAiAnalysis && (
                 <div className="bg-white rounded-3xl p-6 sm:p-8 shadow-sm border border-slate-200 space-y-6">
-                  <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+                  <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-4">
                     <div className="flex items-center space-x-2.5">
-                      <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-brand-600 to-indigo-600 flex items-center justify-center text-white">
+                      <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-brand-600 to-indigo-600 flex items-center justify-center text-white shadow-md shadow-brand-500/20">
                         <Sparkles className="w-5 h-5" />
                       </div>
                       <div>
-                        <h3 className="font-black text-base text-slate-900">Gemma 4 Diagnostic Interpretation</h3>
-                        <p className="text-[11px] text-slate-500">Model: {currentAiAnalysis.modelId}</p>
+                        <h3 className="font-black text-base text-slate-900">AI Diagnostic Interpretation</h3>
+                        <p className="text-[11px] text-slate-500">
+                          Structured multimodal issue evaluation & verified rate estimates
+                        </p>
                       </div>
                     </div>
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-brand-700 bg-brand-50 border border-brand-200 px-2 py-0.5 rounded-full">
-                      Preliminary AI Analysis
-                    </span>
+                    <div className="flex items-center space-x-2">
+                      {currentAiAnalysis.confidence && (
+                        <span className="text-[10px] font-extrabold uppercase tracking-wider text-indigo-700 bg-indigo-50 border border-indigo-200 px-2.5 py-0.5 rounded-full">
+                          Confidence: {currentAiAnalysis.confidence}
+                        </span>
+                      )}
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-brand-700 bg-brand-50 border border-brand-200 px-2.5 py-0.5 rounded-full">
+                        Preliminary Assessment
+                      </span>
+                    </div>
                   </div>
 
                   {/* Safety Alert (Gas / Fire / Live Sparks / Structural) */}
@@ -767,6 +847,66 @@ export const CustomerDashboard: React.FC = () => {
                     diyEligibility={currentAiAnalysis.diyEligibility}
                     requiresProfessional={currentAiAnalysis.requiresProfessional}
                   />
+
+                  {/* Intelligent Image Quality & Authenticity Assessment */}
+                  {currentAiAnalysis.imageAssessment?.hasImage && (
+                    <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 sm:p-5 space-y-3">
+                      <div className="flex items-center justify-between border-b border-slate-200/60 pb-2.5">
+                        <div className="flex items-center space-x-2">
+                          <ImageIcon className="w-4 h-4 text-brand-600" />
+                          <h4 className="font-bold text-xs text-slate-900">
+                            Uploaded Problem Image Evaluation
+                          </h4>
+                        </div>
+                        <span
+                          className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full ${
+                            currentAiAnalysis.imageAssessment.qualitySufficientForDiagnosis
+                              ? 'bg-emerald-100 text-emerald-800'
+                              : 'bg-amber-100 text-amber-800'
+                          }`}
+                        >
+                          {currentAiAnalysis.imageAssessment.qualitySufficientForDiagnosis
+                            ? '✓ Quality Sufficient for Assessment'
+                            : '⚠️ Unclear Image — Physical Check Recommended'}
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center text-xs">
+                        <div className="bg-white p-2.5 rounded-xl border border-slate-200">
+                          <span className="text-[10px] text-slate-400 block font-bold uppercase">Clarity</span>
+                          <span className="font-bold text-slate-800">
+                            {currentAiAnalysis.imageAssessment.quality?.isClear ? 'Clear & Sharp' : 'Slightly Blurry'}
+                          </span>
+                        </div>
+                        <div className="bg-white p-2.5 rounded-xl border border-slate-200">
+                          <span className="text-[10px] text-slate-400 block font-bold uppercase">Lighting</span>
+                          <span className="font-bold text-slate-800 capitalize">
+                            {currentAiAnalysis.imageAssessment.quality?.lighting || 'Adequate'}
+                          </span>
+                        </div>
+                        <div className="bg-white p-2.5 rounded-xl border border-slate-200">
+                          <span className="text-[10px] text-slate-400 block font-bold uppercase">Damaged Part</span>
+                          <span className="font-bold text-slate-800">
+                            {currentAiAnalysis.imageAssessment.quality?.componentVisible ? 'Visible' : 'Partially Hidden'}
+                          </span>
+                        </div>
+                        <div className="bg-white p-2.5 rounded-xl border border-slate-200">
+                          <span className="text-[10px] text-slate-400 block font-bold uppercase">Authenticity</span>
+                          <span className="font-bold text-slate-800 text-[11px]">
+                            {currentAiAnalysis.imageAssessment.authenticity?.status === 'verified_authentic'
+                              ? 'Verified'
+                              : 'Unable to verify'}
+                          </span>
+                        </div>
+                      </div>
+
+                      {currentAiAnalysis.imageAssessment.guidance && (
+                        <p className="text-[11px] text-slate-600 leading-relaxed bg-white p-2.5 rounded-xl border border-slate-200/80">
+                          <strong>Image Guidance:</strong> {currentAiAnalysis.imageAssessment.guidance}
+                        </p>
+                      )}
+                    </div>
+                  )}
 
                   {/* Problem Summary & Observations */}
                   <div className="space-y-3">
@@ -794,7 +934,7 @@ export const CustomerDashboard: React.FC = () => {
                     </h4>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                       {currentAiAnalysis.possibleCauses?.map((cause, idx) => (
-                        <div key={idx} className="bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-1.5">
+                        <div key={idx} className="bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-2">
                           <div className="flex items-center justify-between">
                             <span className="font-bold text-xs text-slate-900">{cause.cause}</span>
                             <span
@@ -810,9 +950,23 @@ export const CustomerDashboard: React.FC = () => {
                             </span>
                           </div>
                           <p className="text-[11px] text-slate-600 leading-relaxed">{cause.reason}</p>
+
+                          {cause.recommendedRepair && (
+                            <div className="text-[11px] text-slate-700 bg-white p-2 rounded-lg border border-slate-100">
+                              <strong className="text-slate-900">Repair Approach:</strong> {cause.recommendedRepair}
+                            </div>
+                          )}
+
+                          {cause.partsRequired && cause.partsRequired.length > 0 && (
+                            <div className="text-[10px] text-slate-500">
+                              <span>Parts: </span>
+                              <span className="font-semibold text-slate-700">{cause.partsRequired.join(', ')}</span>
+                            </div>
+                          )}
+
                           {cause.requiresInspection && (
-                            <span className="text-[10px] text-indigo-600 font-semibold block pt-1">
-                              • Requires on-site testing/inspection
+                            <span className="text-[10px] text-indigo-600 font-semibold block pt-0.5">
+                              • Requires on-site verification & inspection
                             </span>
                           )}
                         </div>
@@ -820,14 +974,23 @@ export const CustomerDashboard: React.FC = () => {
                     </div>
                   </div>
 
-                  {/* Uncertainty Notice */}
-                  {currentAiAnalysis.uncertainty && (
-                    <div className="bg-slate-100 rounded-xl p-3 text-[11px] text-slate-600 leading-relaxed border border-slate-200">
-                      <strong>Remote Uncertainty Notice:</strong> {currentAiAnalysis.uncertainty}
+                  {/* Assumptions & Uncertainty Notice */}
+                  {(currentAiAnalysis.uncertainty || (currentAiAnalysis.assumptions && currentAiAnalysis.assumptions.length > 0)) && (
+                    <div className="bg-slate-100 rounded-xl p-3 text-[11px] text-slate-600 leading-relaxed border border-slate-200 space-y-1">
+                      {currentAiAnalysis.uncertainty && (
+                        <p>
+                          <strong>Remote Diagnostic Uncertainty:</strong> {currentAiAnalysis.uncertainty}
+                        </p>
+                      )}
+                      {currentAiAnalysis.assumptions && currentAiAnalysis.assumptions.length > 0 && (
+                        <p>
+                          <strong>Operating Assumptions:</strong> {currentAiAnalysis.assumptions.join('; ')}
+                        </p>
+                      )}
                     </div>
                   )}
 
-                  {/* Cost Estimation Card */}
+                  {/* Itemized Cost Estimation Card */}
                   <CostEstimateCard estimate={currentAiAnalysis.costEstimate} />
                 </div>
               )}
@@ -842,7 +1005,7 @@ export const CustomerDashboard: React.FC = () => {
                     </p>
                   </div>
                   <span className="text-xs font-semibold text-brand-600 bg-brand-50 px-2.5 py-1 rounded-full">
-                    {matchingWorkers.length} Available
+                    {availableCount} Available
                   </span>
                 </div>
 
@@ -889,99 +1052,97 @@ export const CustomerDashboard: React.FC = () => {
                 )}
 
                 {/* Interested Workers Section (Workers who expressed interest) */}
-                {interestedWorkers.filter(iw => iw.status !== 'REJECTED').length > 0 && (
+                {showInterestedWorkersBox && (
                   <div className="bg-indigo-50/70 border border-indigo-200 rounded-2xl p-4 sm:p-5 space-y-3">
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-black text-indigo-950 uppercase tracking-wider block">
                         Technicians Interested in Your Request
                       </span>
                       <span className="text-[11px] font-bold text-indigo-700 bg-white px-2.5 py-0.5 rounded-full border border-indigo-200">
-                        {interestedWorkers.filter(iw => iw.status !== 'REJECTED').length} Expressed Interest
+                        {activeInterestedWorkers.length} Expressed Interest
                       </span>
                     </div>
 
                     <div className="space-y-3">
-                      {interestedWorkers
-                        .filter(iw => iw.status !== 'REJECTED')
-                        .map(iw => (
-                          <div
-                            key={iw.id}
-                            className="bg-white rounded-2xl p-4 border border-indigo-200/80 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4 transition-all"
-                          >
-                            <div className="space-y-1.5 flex-1">
-                              <div className="flex flex-wrap items-center gap-2">
-                                <h4 className="font-black text-sm text-slate-900">{iw.workerName}</h4>
-                                <span className="inline-flex items-center text-xs font-bold text-amber-500 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200">
-                                  <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400 mr-1" />
-                                  {typeof iw.workerRating === 'number'
-                                    ? iw.workerRating.toFixed(1)
-                                    : '5.0'}{' '}
-                                  / 5.0
+                      {activeInterestedWorkers.map(iw => (
+                        <div
+                          key={iw.id}
+                          className="bg-white rounded-2xl p-4 border border-indigo-200/80 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4 transition-all"
+                        >
+                          <div className="space-y-1.5 flex-1">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <h4 className="font-black text-sm text-slate-900">{iw.workerName || 'Local Technician'}</h4>
+                              <span className="inline-flex items-center text-xs font-bold text-amber-500 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200">
+                                <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400 mr-1" />
+                                {typeof iw.workerRating === 'number'
+                                  ? iw.workerRating.toFixed(1)
+                                  : '5.0'}{' '}
+                                / 5.0
+                              </span>
+                              {(iw.workerCompletedJobsCount ?? 0) > 0 && (
+                                <span className="text-[11px] text-slate-500 font-medium">
+                                  • {iw.workerCompletedJobsCount} jobs completed
                                 </span>
-                                {iw.workerCompletedJobsCount > 0 && (
-                                  <span className="text-[11px] text-slate-500 font-medium">
-                                    • {iw.workerCompletedJobsCount} jobs completed
+                              )}
+                              {iw.workerServiceArea && (
+                                <span className="text-[11px] text-slate-500 font-medium">
+                                  • {iw.workerServiceArea}
+                                </span>
+                              )}
+                            </div>
+
+                            {iw.message && (
+                              <p className="text-xs text-slate-600 bg-slate-50 p-2.5 rounded-xl border border-slate-100 italic">
+                                "{iw.message}"
+                              </p>
+                            )}
+
+                            {iw.workerSkills && iw.workerSkills.length > 0 && (
+                              <div className="flex flex-wrap gap-1 pt-0.5">
+                                {iw.workerSkills.map((sk: string, sIdx: number) => (
+                                  <span
+                                    key={sIdx}
+                                    className="text-[10px] font-semibold bg-slate-100 text-slate-700 px-2 py-0.5 rounded-md"
+                                  >
+                                    {sk}
                                   </span>
-                                )}
-                                {iw.workerServiceArea && (
-                                  <span className="text-[11px] text-slate-500 font-medium">
-                                    • {iw.workerServiceArea}
-                                  </span>
-                                )}
+                                ))}
                               </div>
-
-                              {iw.message && (
-                                <p className="text-xs text-slate-600 bg-slate-50 p-2.5 rounded-xl border border-slate-100 italic">
-                                  "{iw.message}"
-                                </p>
-                              )}
-
-                              {iw.workerSkills && iw.workerSkills.length > 0 && (
-                                <div className="flex flex-wrap gap-1 pt-0.5">
-                                  {iw.workerSkills.map((sk: string, sIdx: number) => (
-                                    <span
-                                      key={sIdx}
-                                      className="text-[10px] font-semibold bg-slate-100 text-slate-700 px-2 py-0.5 rounded-md"
-                                    >
-                                      {sk}
-                                    </span>
-                                  ))}
-                                </div>
-                              )}
-                            </div>
-
-                            {/* Action Options: Accept & Decline */}
-                            <div className="flex items-center space-x-2 shrink-0 self-end sm:self-auto">
-                              <button
-                                onClick={() => handleDeclineInterest(iw.workerId, iw.workerName)}
-                                disabled={loading}
-                                className="px-3.5 py-2 border border-slate-300 hover:border-red-300 hover:bg-red-50 text-slate-700 hover:text-red-700 font-bold text-xs rounded-xl transition-all"
-                              >
-                                Decline
-                              </button>
-                              <button
-                                onClick={() => handleGenerateOtp(iw.workerId, iw.workerName)}
-                                disabled={loading}
-                                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-sm transition-all flex items-center space-x-1.5"
-                              >
-                                <KeyRound className="w-3.5 h-3.5" />
-                                <span>Accept & Generate OTP</span>
-                              </button>
-                            </div>
+                            )}
                           </div>
-                        ))}
+
+                          {/* Action Options: Accept & Decline */}
+                          <div className="flex items-center space-x-2 shrink-0 self-end sm:self-auto">
+                            <button
+                              onClick={() => handleDeclineInterest(iw.workerId, iw.workerName || 'Worker')}
+                              disabled={loading}
+                              className="px-3.5 py-2 border border-slate-300 hover:border-red-300 hover:bg-red-50 text-slate-700 hover:text-red-700 font-bold text-xs rounded-xl transition-all"
+                            >
+                              Decline
+                            </button>
+                            <button
+                              onClick={() => handleGenerateOtp(iw.workerId, iw.workerName || 'Worker')}
+                              disabled={loading}
+                              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-sm transition-all flex items-center space-x-1.5"
+                            >
+                              <KeyRound className="w-3.5 h-3.5" />
+                              <span>Accept & Generate OTP</span>
+                            </button>
+                          </div>
+                        </div>
+                      ))}
                     </div>
                   </div>
                 )}
 
                 {/* Available Matching Workers List */}
                 <div className="space-y-3">
-                  {matchingWorkers.length === 0 ? (
+                  {visibleMatchingWorkers.length === 0 ? (
                     <div className="p-8 text-center text-slate-400 text-xs">
                       No available verified workers found for this skill in {currentRequest.locality}. Nearby workers will appear here as they toggle their status to Available.
                     </div>
                   ) : (
-                    matchingWorkers.map((sw, idx) => (
+                    visibleMatchingWorkers.map((sw, idx) => (
                       <div
                         key={idx}
                         className="bg-slate-50 border border-slate-200 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:border-brand-300 transition-colors"

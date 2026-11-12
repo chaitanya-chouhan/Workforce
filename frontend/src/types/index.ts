@@ -134,11 +134,46 @@ export interface AuditLog {
   timestamp: string;
 }
 
+export interface RequiredPart {
+  name: string;
+  partSpecification?: string;
+  estimatedCost: number;
+  priceSource: string;
+}
+
 export interface PossibleCause {
   cause: string;
   reason: string;
   likelihood: 'low' | 'medium' | 'high';
   requiresInspection: boolean;
+  recommendedRepair?: string;
+  partsRequired?: string[];
+  estimatedLabourCost?: number;
+  estimatedTotalCost?: number;
+}
+
+export interface ImageQualityAssessment {
+  isClear: boolean;
+  lighting: 'good' | 'too_dark' | 'overexposed' | 'adequate';
+  componentVisible: boolean;
+  resolutionSufficient: boolean;
+  obstructions: 'none' | 'partial' | 'cropped' | 'obstructed';
+  watermarksOrOverlays: boolean;
+  notes?: string;
+}
+
+export interface ImageAuthenticityAssessment {
+  status: 'verified_authentic' | 'suspicious' | 'unable_to_verify';
+  heuristicNotes: string;
+  heuristicIndicators: string[];
+}
+
+export interface ImageAssessment {
+  hasImage: boolean;
+  quality?: ImageQualityAssessment;
+  authenticity?: ImageAuthenticityAssessment;
+  guidance?: string;
+  qualitySufficientForDiagnosis: boolean;
 }
 
 export interface CostEstimate {
@@ -152,6 +187,17 @@ export interface CostEstimate {
   estimatedCostMax: number;
   currency: string;
   disclaimer: string;
+  // Extended modular pricing breakdown
+  partsCost?: number;
+  travelCost?: number;
+  labourCost?: number;
+  additionalCost?: number;
+  requiredParts?: RequiredPart[];
+  complexityLevel?: 'routine' | 'moderate' | 'complex' | 'specialized';
+  expectedDurationHours?: number;
+  pricingLocality?: string;
+  pricingMethod?: string;
+  factorsAffectingPrice?: string[];
 }
 
 export interface AIAnalysis {
@@ -160,18 +206,25 @@ export interface AIAnalysis {
   customerId: string;
   modelId: string;
   problemSummary: string;
+  issueSummary?: string;
   observations: string[];
   possibleCauses: PossibleCause[];
+  confidence?: 'low' | 'medium' | 'high';
+  imageAssessment?: ImageAssessment;
+  recommendedRepair?: string;
   recommendedSkills: string[];
   severity: 'low' | 'medium' | 'high' | 'emergency';
   uncertainty: string;
+  assumptions?: string[];
   diyEligibility: 'allowed' | 'limited' | 'not_allowed';
   basicChecks: string[];
   safetyWarnings: string[];
   requiresProfessional: boolean;
+  professionalInspectionRequired?: boolean;
   inspectionQuestions: string[];
   estimatedCostCategory?: string;
   costEstimate?: CostEstimate;
+  factorsAffectingPrice?: string[];
   createdAt: string;
 }
 
@@ -203,6 +256,8 @@ export interface TaskInterest {
   workerName?: string;
   workerRating?: number;
   workerSkills?: string[];
+  workerCompletedJobsCount?: number;
+  workerServiceArea?: string;
   status: 'PENDING' | 'ACCEPTED' | 'REJECTED';
   message?: string;
   createdAt: string;

@@ -46,37 +46,37 @@ export const OtpDisplayModal: React.FC<OtpDisplayModalProps> = ({
   const isExpired = timeLeft <= 0;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
-      <div className="bg-white rounded-3xl max-w-md w-full shadow-2xl border border-slate-100 overflow-hidden">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fadeIn">
+      <div className="bg-[#171B20] rounded-3xl max-w-md w-full shadow-2xl border border-[#272D34] overflow-hidden">
         {/* Header */}
-        <div className="bg-gradient-to-r from-brand-600 to-indigo-600 p-6 text-white text-center relative">
+        <div className="bg-[#090B0E] border-b border-[#272D34] p-6 text-center relative">
           <button
             onClick={onClose}
-            className="absolute top-4 right-4 text-white/80 hover:text-white p-1 rounded-full hover:bg-white/10"
+            className="absolute top-4 right-4 text-[#8A94A6] hover:text-[#E7EAEE] p-1.5 rounded-xl hover:bg-[#171B20] transition-colors"
           >
             <X className="w-5 h-5" />
           </button>
-          <div className="w-12 h-12 rounded-2xl bg-white/20 backdrop-blur-md flex items-center justify-center mx-auto mb-3">
-            <KeyRound className="w-6 h-6 text-white" />
+          <div className="w-12 h-12 rounded-2xl bg-[#FF6A00] flex items-center justify-center mx-auto mb-3 text-black shadow-[0_0_15px_rgba(255,106,0,0.3)]">
+            <KeyRound className="w-6 h-6" />
           </div>
-          <h3 className="font-bold text-lg">Assignment Confirmation OTP</h3>
-          <p className="text-xs text-white/80 mt-1">Communicate this code to your worker</p>
+          <h3 className="font-bold text-lg text-[#E7EAEE]">Assignment Confirmation OTP</h3>
+          <p className="text-xs text-[#8A94A6] mt-1">Communicate this code to your worker</p>
         </div>
 
         {/* Content */}
         <div className="p-6 text-center space-y-5">
           <div className="space-y-1">
-            <p className="text-xs text-slate-500">Worker Assigned</p>
-            <p className="font-bold text-sm text-slate-900">{workerName}</p>
-            <p className="text-[11px] text-slate-400 truncate">For: "{requestTitle}"</p>
+            <p className="text-xs text-[#8A94A6]">Worker Assigned</p>
+            <p className="font-bold text-sm text-[#E7EAEE]">{workerName}</p>
+            <p className="text-[11px] text-[#8A94A6] truncate">For: "{requestTitle}"</p>
           </div>
 
           {/* 6-Digit OTP Big Box */}
-          <div className="bg-slate-50 border-2 border-brand-500/30 rounded-2xl p-5 flex items-center justify-center space-x-3 shadow-inner">
+          <div className="bg-[#090B0E] border border-[#FF6A00]/40 rounded-2xl p-5 flex items-center justify-center space-x-2.5 shadow-inner">
             {otp.split('').map((digit, idx) => (
               <span
                 key={idx}
-                className="w-11 h-13 flex items-center justify-center text-3xl font-black text-brand-700 bg-white rounded-xl shadow-sm border border-slate-200"
+                className="w-10 h-12 sm:w-11 sm:h-13 flex items-center justify-center text-2xl sm:text-3xl font-black text-[#FF6A00] bg-[#171B20] rounded-xl shadow-sm border border-[#272D34]"
               >
                 {digit}
               </span>
@@ -86,16 +86,16 @@ export const OtpDisplayModal: React.FC<OtpDisplayModalProps> = ({
           {/* Copy Button */}
           <button
             onClick={handleCopy}
-            className="inline-flex items-center space-x-2 text-xs font-semibold px-4 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors"
+            className="inline-flex items-center space-x-2 text-xs font-semibold px-4 py-2 rounded-xl bg-[#272D34] hover:bg-[#353D47] border border-[#353D47] text-[#E7EAEE] transition-colors"
           >
             {copied ? (
               <>
-                <Check className="w-4 h-4 text-emerald-600" />
-                <span className="text-emerald-700">Copied to Clipboard</span>
+                <Check className="w-4 h-4 text-emerald-400" />
+                <span className="text-emerald-400">Copied to Clipboard</span>
               </>
             ) : (
               <>
-                <Copy className="w-4 h-4 text-slate-500" />
+                <Copy className="w-4 h-4 text-[#8A94A6]" />
                 <span>Copy 6-Digit Code</span>
               </>
             )}
@@ -103,13 +103,13 @@ export const OtpDisplayModal: React.FC<OtpDisplayModalProps> = ({
 
           {/* Expiration Notice */}
           <div className="flex items-center justify-center space-x-2 text-xs">
-            <Clock className={`w-4 h-4 ${isExpired ? 'text-red-500' : 'text-slate-400'}`} />
+            <Clock className={`w-4 h-4 ${isExpired ? 'text-red-400' : 'text-[#8A94A6]'}`} />
             {isExpired ? (
-              <span className="text-red-600 font-bold">This OTP has expired. Please generate a new one.</span>
+              <span className="text-red-400 font-bold">This OTP has expired. Please generate a new one.</span>
             ) : (
-              <span className="text-slate-500">
+              <span className="text-[#8A94A6]">
                 Expires in{' '}
-                <span className="font-bold text-brand-600">
+                <span className="font-bold text-[#FF9A3C]">
                   {minutes}:{seconds < 10 ? `0${seconds}` : seconds}
                 </span>
               </span>
@@ -117,8 +117,8 @@ export const OtpDisplayModal: React.FC<OtpDisplayModalProps> = ({
           </div>
 
           {/* Verification Workflow Explanation */}
-          <div className="bg-brand-50/50 border border-brand-100 rounded-xl p-3 text-[11px] text-slate-600 leading-relaxed text-left flex items-start space-x-2.5">
-            <ShieldCheck className="w-4 h-4 text-brand-600 shrink-0 mt-0.5" />
+          <div className="bg-[#272D34]/40 border border-[#272D34] rounded-xl p-3 text-[11px] text-[#8A94A6] leading-relaxed text-left flex items-start space-x-2.5">
+            <ShieldCheck className="w-4 h-4 text-[#FF6A00] shrink-0 mt-0.5" />
             <span>
               Share this code verbally or by phone. The worker will enter it on their dashboard to securely lock and confirm the assignment.
             </span>
@@ -126,7 +126,7 @@ export const OtpDisplayModal: React.FC<OtpDisplayModalProps> = ({
 
           <button
             onClick={onClose}
-            className="w-full py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-medium text-xs rounded-xl transition-colors"
+            className="w-full py-2.5 bg-[#FF6A00] hover:bg-[#FF9A3C] text-black font-semibold text-xs rounded-xl shadow-sm transition-all"
           >
             Done
           </button>

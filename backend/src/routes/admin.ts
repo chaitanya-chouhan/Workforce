@@ -147,7 +147,12 @@ router.get('/workers', async (req: Request, res: Response) => {
       docsMap.set(d.workerId, d);
     });
 
-    let workers: (WorkerProfile & { accountStatus?: string; hasDocument?: boolean; maskedNumber?: string })[] = [];
+    let workers: (WorkerProfile & {
+      accountStatus?: string;
+      hasDocument?: boolean;
+      maskedNumber?: string;
+      documentMimeType?: string;
+    })[] = [];
 
     workersSnap.forEach(doc => {
       const w = doc.data() as WorkerProfile;
@@ -160,6 +165,7 @@ router.get('/workers', async (req: Request, res: Response) => {
         accountStatus: u?.accountStatus || 'ACTIVE',
         hasDocument: Boolean(d || w.identityDocumentSubmitted),
         maskedNumber: d?.maskedNumber || w.maskedAadhaar || undefined,
+        documentMimeType: d?.mimeType || undefined,
       });
     });
 
@@ -191,20 +197,38 @@ router.get('/workers/:workerId/document', async (req: Request, res: Response) =>
     const { workerId } = req.params;
     const db = getDb();
 
-    const snap = await db.collection('workerDocuments').where('workerId', '==', workerId).limit(1).get();
-    if (snap.empty) {
-      res.status(404).json({ success: false, error: 'Identity document not found for this worker.' });
-      return;
+    let docData: WorkerDocument | null = null;
+    const workerProfileDoc = await db.collection('workerProfiles').doc(workerId).get();
+    if (workerProfileDoc.exists) {
+      const wp = workerProfileDoc.data() as WorkerProfile;
+      if (wp.identityDocumentId) {
+        const dSnap = await db.collection('workerDocuments').doc(wp.identityDocumentId).get();
+        if (dSnap.exists) {
+          docData = dSnap.data() as WorkerDocument;
+        }
+      }
     }
 
-    const docData = snap.docs[0].data() as WorkerDocument;
+    if (!docData) {
+      const snap = await db.collection('workerDocuments').where('workerId', '==', workerId).get();
+      if (snap.empty) {
+        res.status(404).json({ success: false, error: 'Identity document not found for this worker.' });
+        return;
+      }
+      const sorted = snap.docs
+        .map(d => d.data() as WorkerDocument)
+        .sort((a, b) => new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime());
+      docData = sorted[0];
+    }
+
     if (!docData.storagePath || !fs.existsSync(docData.storagePath)) {
       res.status(404).json({ success: false, error: 'Identity document file is missing from private storage.' });
       return;
     }
 
+    const safeFileName = (docData.originalFileName || 'document').replace(/[^a-zA-Z0-9._-]/g, '_');
     res.setHeader('Content-Type', docData.mimeType || 'application/octet-stream');
-    res.setHeader('Content-Disposition', `inline; filename="${docData.originalFileName || 'document'}"`);
+    res.setHeader('Content-Disposition', `inline; filename="${safeFileName}"`);
     res.sendFile(docData.storagePath);
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message });

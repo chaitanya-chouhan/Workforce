@@ -10,10 +10,33 @@ export function errorHandler(
   console.error('[Error Handler]', err);
 
   // Handle Multer upload errors or file filter rejections
-  if (err.name === 'MulterError' || (err.message && err.message.toLowerCase().includes('file type'))) {
+  if (err.name === 'MulterError') {
+    let message = err.message;
+    if (err.code === 'LIMIT_FILE_SIZE') {
+      message = 'The uploaded file exceeds the maximum 5MB size limit. Please select a smaller file.';
+    } else if (err.code === 'LIMIT_UNEXPECTED_FILE') {
+      message = 'An unexpected file field was received. Please use the designated upload field.';
+    }
     res.status(400).json({
       success: false,
-      error: `File upload error: ${err.message}`,
+      error: `File upload error: ${message}`,
+      code: err.code,
+    });
+    return;
+  }
+
+  // Handle explicit file format rejections from multer fileFilter
+  if (
+    err.message &&
+    (err.message.toLowerCase().includes('file type') ||
+      err.message.toLowerCase().includes('document format') ||
+      err.message.toLowerCase().includes('evidence format') ||
+      err.message.toLowerCase().includes('invalid file') ||
+      err.message.toLowerCase().includes('supported'))
+  ) {
+    res.status(400).json({
+      success: false,
+      error: err.message,
     });
     return;
   }

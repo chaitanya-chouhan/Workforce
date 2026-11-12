@@ -7,6 +7,7 @@ import { requireRole, requireActiveAccount } from '../middleware/roleMiddleware'
 import { ServiceRequest, AIAnalysis, CostEstimate } from '../types';
 import { gemmaService } from '../services/gemmaService';
 import { getRateCardForSkill, calculateEstimate } from '../services/costEstimationService';
+import { pricingService } from '../services/pricingService';
 
 const router = Router();
 
@@ -279,13 +280,26 @@ router.post(
         return;
       }
 
-      // Calculate approximate cost using configured rate cards
+      // Calculate realistic itemized cost using modular pricing service
       const primarySkill = aiResult.recommendedSkills[0] || 'general_maintenance';
-      const rateCard = await getRateCardForSkill(primarySkill, requestData.locality);
       let costEstimate: CostEstimate | undefined;
 
-      if (rateCard) {
-        costEstimate = calculateEstimate(rateCard, aiResult.severity);
+      try {
+        costEstimate = await pricingService.calculateRealisticEstimate({
+          skillId: primarySkill,
+          locality: requestData.locality,
+          district: requestData.district,
+          severity: aiResult.severity,
+          description: requestData.description,
+          possibleCauses: aiResult.possibleCauses,
+          recommendedRepair: aiResult.recommendedRepair,
+        });
+      } catch (priceErr) {
+        console.warn('[PricingService] Fallback to base rate card calculation:', priceErr);
+        const rateCard = await getRateCardForSkill(primarySkill, requestData.locality);
+        if (rateCard) {
+          costEstimate = calculateEstimate(rateCard, aiResult.severity);
+        }
       }
 
       const now = new Date().toISOString();
@@ -297,16 +311,23 @@ router.post(
         customerId: req.user!.uid,
         modelId: gemmaService.getModelId(),
         problemSummary: aiResult.problemSummary,
+        issueSummary: aiResult.issueSummary || aiResult.problemSummary,
         observations: aiResult.observations,
         possibleCauses: aiResult.possibleCauses,
+        confidence: aiResult.confidence || 'medium',
+        imageAssessment: aiResult.imageAssessment,
+        recommendedRepair: aiResult.recommendedRepair,
         recommendedSkills: aiResult.recommendedSkills,
         severity: aiResult.severity,
         uncertainty: aiResult.uncertainty,
+        assumptions: aiResult.assumptions || [],
         diyEligibility: aiResult.diyEligibility,
         basicChecks: aiResult.basicChecks,
         safetyWarnings: aiResult.safetyWarnings,
         requiresProfessional: aiResult.requiresProfessional,
+        professionalInspectionRequired: aiResult.professionalInspectionRequired ?? true,
         inspectionQuestions: aiResult.inspectionQuestions || [],
+        factorsAffectingPrice: costEstimate?.factorsAffectingPrice || aiResult.factorsAffectingPrice || [],
         ...(aiResult.estimatedCostCategory ? { estimatedCostCategory: aiResult.estimatedCostCategory } : {}),
         ...(costEstimate ? { costEstimate } : {}),
         createdAt: now,
@@ -324,7 +345,7 @@ router.post(
 
       res.json({
         success: true,
-        message: 'Gemma 4 diagnostic analysis completed successfully',
+        message: 'Diagnostic analysis completed successfully',
         analysis: aiRecord,
       });
     } catch (err: any) {

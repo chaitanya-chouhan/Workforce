@@ -166,32 +166,46 @@ export interface ServiceRequest {
   updatedAt: string;
 }
 
+export interface RequiredPart {
+  name: string;
+  partSpecification?: string;
+  estimatedCost: number;
+  priceSource: string;
+}
+
 export interface PossibleCause {
   cause: string;
   reason: string;
   likelihood: 'low' | 'medium' | 'high';
   requiresInspection: boolean;
+  recommendedRepair?: string;
+  partsRequired?: string[];
+  estimatedLabourCost?: number;
+  estimatedTotalCost?: number;
 }
 
-export interface AIAnalysis {
-  id?: string;
-  requestId: string;
-  customerId: string;
-  modelId: string;
-  problemSummary: string;
-  observations: string[];
-  possibleCauses: PossibleCause[];
-  recommendedSkills: string[];
-  severity: SeverityLevel;
-  uncertainty: string;
-  diyEligibility: DiyEligibility;
-  basicChecks: string[];
-  safetyWarnings: string[];
-  requiresProfessional: boolean;
-  inspectionQuestions: string[];
-  estimatedCostCategory?: string;
-  costEstimate?: CostEstimate;
-  createdAt: string;
+export interface ImageQualityAssessment {
+  isClear: boolean;
+  lighting: 'good' | 'too_dark' | 'overexposed' | 'adequate';
+  componentVisible: boolean;
+  resolutionSufficient: boolean;
+  obstructions: 'none' | 'partial' | 'cropped' | 'obstructed';
+  watermarksOrOverlays: boolean;
+  notes?: string;
+}
+
+export interface ImageAuthenticityAssessment {
+  status: 'verified_authentic' | 'suspicious' | 'unable_to_verify';
+  heuristicNotes: string;
+  heuristicIndicators: string[];
+}
+
+export interface ImageAssessment {
+  hasImage: boolean;
+  quality?: ImageQualityAssessment;
+  authenticity?: ImageAuthenticityAssessment;
+  guidance?: string;
+  qualitySufficientForDiagnosis: boolean;
 }
 
 export interface CostEstimate {
@@ -205,6 +219,45 @@ export interface CostEstimate {
   estimatedCostMax: number;
   currency: string;
   disclaimer: string;
+  // Extended modular pricing breakdown
+  partsCost?: number;
+  travelCost?: number;
+  labourCost?: number;
+  additionalCost?: number;
+  requiredParts?: RequiredPart[];
+  complexityLevel?: 'routine' | 'moderate' | 'complex' | 'specialized';
+  expectedDurationHours?: number;
+  pricingLocality?: string;
+  pricingMethod?: string;
+  factorsAffectingPrice?: string[];
+}
+
+export interface AIAnalysis {
+  id?: string;
+  requestId: string;
+  customerId: string;
+  modelId: string;
+  problemSummary: string;
+  issueSummary?: string; // Canonical alias
+  observations: string[];
+  possibleCauses: PossibleCause[];
+  confidence?: 'low' | 'medium' | 'high';
+  imageAssessment?: ImageAssessment;
+  recommendedRepair?: string;
+  recommendedSkills: string[];
+  severity: SeverityLevel;
+  uncertainty: string;
+  assumptions?: string[];
+  diyEligibility: DiyEligibility;
+  basicChecks: string[];
+  safetyWarnings: string[];
+  requiresProfessional: boolean;
+  professionalInspectionRequired?: boolean;
+  inspectionQuestions: string[];
+  estimatedCostCategory?: string;
+  costEstimate?: CostEstimate;
+  factorsAffectingPrice?: string[];
+  createdAt: string;
 }
 
 export interface RateCard {

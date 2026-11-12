@@ -72,8 +72,23 @@ export const AdminDashboard: React.FC = () => {
     isOpen: boolean;
     title: string;
     url: string | null;
+    mimeType: string | null;
+    worker: any | null;
+    selectedStatus: 'VERIFIED' | 'REJECTED' | 'RESUBMISSION_REQUIRED';
+    notes: string;
+    submitting: boolean;
     loading: boolean;
-  }>({ isOpen: false, title: '', url: null, loading: false });
+  }>({
+    isOpen: false,
+    title: '',
+    url: null,
+    mimeType: null,
+    worker: null,
+    selectedStatus: 'VERIFIED',
+    notes: 'Identity documentation reviewed and approved by administrator.',
+    submitting: false,
+    loading: false,
+  });
 
   // Password Change state
   const [currentPass, setCurrentPass] = useState('');
@@ -161,24 +176,59 @@ export const AdminDashboard: React.FC = () => {
   };
 
   // Document viewing
-  const handleViewWorkerDocument = async (workerId: string, workerName: string) => {
+  const handleViewWorkerDocument = async (worker: any) => {
+    const workerName = worker.name || 'Worker';
     setDocPreviewModal({
       isOpen: true,
       title: `Identity Document: ${workerName}`,
       url: null,
+      mimeType: worker.documentMimeType || null,
+      worker,
+      selectedStatus: 'VERIFIED',
+      notes: 'Identity documentation reviewed and approved by administrator.',
+      submitting: false,
       loading: true,
     });
     try {
-      const blobUrl = await api.getAdminWorkerDocumentBlob(workerId);
-      setDocPreviewModal({
-        isOpen: true,
-        title: `Identity Document: ${workerName}`,
+      const blobUrl = await api.getAdminWorkerDocumentBlob(worker.userId);
+      setDocPreviewModal(prev => ({
+        ...prev,
         url: blobUrl,
         loading: false,
-      });
+      }));
     } catch (err: any) {
-      setDocPreviewModal({ isOpen: false, title: '', url: null, loading: false });
+      setDocPreviewModal(prev => ({ ...prev, isOpen: false, url: null, loading: false }));
       showNotification('error', err.message || 'Could not fetch worker document.');
+    }
+  };
+
+  const handleModalSubmitVerification = async () => {
+    if (!docPreviewModal.worker) return;
+    if (!docPreviewModal.notes.trim()) {
+      showNotification('error', 'Please enter verification review notes.');
+      return;
+    }
+
+    setDocPreviewModal(prev => ({ ...prev, submitting: true }));
+    try {
+      const res = await api.verifyWorker(
+        docPreviewModal.worker.userId,
+        docPreviewModal.selectedStatus,
+        docPreviewModal.notes.trim()
+      );
+      if (res.success) {
+        showNotification(
+          'success',
+          `Worker ${docPreviewModal.worker.name || 'profile'} verification updated to ${docPreviewModal.selectedStatus}.`
+        );
+        if (docPreviewModal.url) URL.revokeObjectURL(docPreviewModal.url);
+        setDocPreviewModal(prev => ({ ...prev, isOpen: false, worker: null, url: null }));
+        await loadData();
+      }
+    } catch (err: any) {
+      showNotification('error', err.message || 'Failed to update verification status.');
+    } finally {
+      setDocPreviewModal(prev => ({ ...prev, submitting: false }));
     }
   };
 
@@ -187,18 +237,22 @@ export const AdminDashboard: React.FC = () => {
       isOpen: true,
       title: `Complaint Evidence: ${subject}`,
       url: null,
+      mimeType: null,
+      worker: null,
+      selectedStatus: 'VERIFIED',
+      notes: '',
+      submitting: false,
       loading: true,
     });
     try {
       const blobUrl = await api.getComplaintEvidenceBlob(complaintId);
-      setDocPreviewModal({
-        isOpen: true,
-        title: `Complaint Evidence: ${subject}`,
+      setDocPreviewModal(prev => ({
+        ...prev,
         url: blobUrl,
         loading: false,
-      });
+      }));
     } catch (err: any) {
-      setDocPreviewModal({ isOpen: false, title: '', url: null, loading: false });
+      setDocPreviewModal(prev => ({ ...prev, isOpen: false, url: null, loading: false }));
       showNotification('error', err.message || 'Could not fetch complaint evidence.');
     }
   };
@@ -518,7 +572,7 @@ export const AdminDashboard: React.FC = () => {
                     <div className="flex items-center space-x-2 shrink-0">
                       {w.identityDocumentSubmitted ? (
                         <button
-                          onClick={() => handleViewWorkerDocument(w.userId, w.name || 'Worker')}
+                          onClick={() => handleViewWorkerDocument(w)}
                           className="px-3.5 py-1.5 bg-indigo-50 border border-indigo-200 text-indigo-700 hover:bg-indigo-100 text-xs font-semibold rounded-xl flex items-center space-x-1.5 transition-colors"
                         >
                           <Eye className="w-3.5 h-3.5" />
@@ -642,7 +696,7 @@ export const AdminDashboard: React.FC = () => {
                     <td className="p-3 text-right space-x-2">
                       {w.identityDocumentSubmitted && (
                         <button
-                          onClick={() => handleViewWorkerDocument(w.userId, w.name || 'Worker')}
+                          onClick={() => handleViewWorkerDocument(w)}
                           className="text-indigo-600 hover:underline font-bold"
                         >
                           Doc
@@ -1313,45 +1367,207 @@ export const AdminDashboard: React.FC = () => {
         </div>
       )}
 
-      {/* DOCUMENT PREVIEW MODAL */}
+      {/* DOCUMENT PREVIEW & INTEGRATED VERIFICATION MODAL */}
       {docPreviewModal.isOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-sm animate-fade-in">
-          <div className="bg-white w-full max-w-3xl rounded-3xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[85vh]">
+          <div className={`bg-white w-full ${docPreviewModal.worker ? 'max-w-5xl' : 'max-w-3xl'} rounded-3xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[90vh]`}>
             <div className="px-6 py-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
-              <h3 className="font-bold text-sm text-slate-900">{docPreviewModal.title}</h3>
+              <div className="flex items-center space-x-2">
+                <FileText className="w-5 h-5 text-brand-600" />
+                <h3 className="font-bold text-sm text-slate-900">{docPreviewModal.title}</h3>
+                {docPreviewModal.worker && (
+                  <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-amber-100 text-amber-800">
+                    Status: {docPreviewModal.worker.verificationStatus}
+                  </span>
+                )}
+              </div>
               <button
-                onClick={() => setDocPreviewModal({ isOpen: false, title: '', url: null, loading: false })}
+                onClick={() => {
+                  if (docPreviewModal.url) URL.revokeObjectURL(docPreviewModal.url);
+                  setDocPreviewModal(prev => ({ ...prev, isOpen: false, worker: null, url: null }));
+                }}
                 className="text-slate-400 hover:text-slate-700 font-bold text-sm"
               >
                 ✕
               </button>
             </div>
 
-            <div className="p-6 flex-1 overflow-auto flex items-center justify-center bg-slate-100 min-h-[300px]">
+            <div className="p-6 flex-1 overflow-auto bg-slate-100">
               {docPreviewModal.loading ? (
-                <div className="text-center space-y-2">
-                  <div className="w-6 h-6 border-2 border-brand-600 border-t-transparent rounded-full animate-spin mx-auto" />
-                  <span className="text-xs text-slate-500">Retrieving encrypted private document...</span>
+                <div className="text-center py-16 space-y-2">
+                  <div className="w-8 h-8 border-3 border-brand-600 border-t-transparent rounded-full animate-spin mx-auto" />
+                  <span className="text-xs text-slate-500 font-medium">Retrieving encrypted private document...</span>
                 </div>
               ) : docPreviewModal.url ? (
-                <div className="w-full h-full flex flex-col items-center justify-center space-y-4">
-                  <iframe
-                    src={docPreviewModal.url}
-                    title="Document Preview"
-                    className="w-full h-[500px] rounded-xl border border-slate-200 bg-white"
-                  />
-                  <a
-                    href={docPreviewModal.url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="px-4 py-2 bg-brand-600 text-white text-xs font-bold rounded-xl flex items-center space-x-1.5"
-                  >
-                    <ExternalLink className="w-3.5 h-3.5" />
-                    <span>Open in Full Tab</span>
-                  </a>
+                <div className={`grid grid-cols-1 ${docPreviewModal.worker ? 'lg:grid-cols-12 gap-6' : ''} items-start`}>
+                  {/* Left Column: Document Image / PDF Display */}
+                  <div className={`${docPreviewModal.worker ? 'lg:col-span-7' : 'w-full'} space-y-3`}>
+                    <div className="w-full min-h-[420px] max-h-[560px] rounded-2xl border border-slate-200 bg-white flex items-center justify-center p-2 overflow-auto shadow-sm">
+                      {docPreviewModal.mimeType === 'application/pdf' ? (
+                        <iframe
+                          src={docPreviewModal.url}
+                          title="Identity Document PDF"
+                          className="w-full h-[520px] rounded-xl border-0"
+                        />
+                      ) : (
+                        <img
+                          src={docPreviewModal.url}
+                          alt="Worker Identity Document Preview"
+                          className="max-h-[500px] w-auto max-w-full rounded-xl object-contain shadow-xs"
+                        />
+                      )}
+                    </div>
+                    <div className="flex items-center justify-between text-xs text-slate-500 px-1">
+                      <span>Format: {docPreviewModal.mimeType || 'Image Document'}</span>
+                      <a
+                        href={docPreviewModal.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-brand-600 hover:underline font-bold flex items-center space-x-1"
+                      >
+                        <ExternalLink className="w-3.5 h-3.5" />
+                        <span>Open Document in Full Window</span>
+                      </a>
+                    </div>
+                  </div>
+
+                  {/* Right Column: Worker Info & Bound Verification Decision */}
+                  {docPreviewModal.worker && (
+                    <div className="lg:col-span-5 bg-white rounded-2xl border border-slate-200 p-5 space-y-4 shadow-sm">
+                      <div className="border-b border-slate-100 pb-3">
+                        <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider block">
+                          Worker Profile Under Review
+                        </span>
+                        <h4 className="text-base font-black text-slate-900 mt-0.5">
+                          {docPreviewModal.worker.name || 'Worker'}
+                        </h4>
+                        <p className="text-xs text-slate-500 mt-0.5">
+                          {docPreviewModal.worker.email} • {docPreviewModal.worker.phone || 'No phone'}
+                        </p>
+                      </div>
+
+                      <div className="space-y-2 text-xs">
+                        <div className="flex items-center justify-between py-1 border-b border-slate-100">
+                          <span className="text-slate-500">Service Locality:</span>
+                          <strong className="text-slate-800">{docPreviewModal.worker.serviceArea || 'General'}</strong>
+                        </div>
+                        <div className="flex items-center justify-between py-1 border-b border-slate-100">
+                          <span className="text-slate-500">Trade Experience:</span>
+                          <strong className="text-slate-800">{docPreviewModal.worker.experienceYears || 0} Years</strong>
+                        </div>
+                        {docPreviewModal.worker.maskedAadhaar && (
+                          <div className="flex items-center justify-between py-1 border-b border-slate-100">
+                            <span className="text-slate-500">Masked Aadhaar:</span>
+                            <span className="font-mono text-xs font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded">
+                              ****-****-{docPreviewModal.worker.maskedAadhaar}
+                            </span>
+                          </div>
+                        )}
+                        {docPreviewModal.worker.skills && docPreviewModal.worker.skills.length > 0 && (
+                          <div className="pt-1">
+                            <span className="text-slate-500 text-[11px] block mb-1">Declared Skills:</span>
+                            <div className="flex flex-wrap gap-1">
+                              {docPreviewModal.worker.skills.map((sk: string, sIdx: number) => (
+                                <span
+                                  key={sIdx}
+                                  className="text-[10px] font-semibold bg-slate-100 text-slate-700 px-2 py-0.5 rounded"
+                                >
+                                  {sk}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        {docPreviewModal.worker.bio && (
+                          <p className="text-[11px] text-slate-600 italic bg-slate-50 p-2.5 rounded-xl border border-slate-100">
+                            "{docPreviewModal.worker.bio}"
+                          </p>
+                        )}
+                      </div>
+
+                      {/* Direct Verification Action Controls */}
+                      <div className="pt-2 border-t border-slate-200 space-y-3">
+                        <label className="block text-xs font-bold text-slate-800">
+                          Select Verification Decision:
+                        </label>
+                        <div className="grid grid-cols-3 gap-1.5">
+                          {[
+                            {
+                              id: 'VERIFIED',
+                              label: 'Approve',
+                              color: 'bg-emerald-600 text-white',
+                              defaultNote: 'Identity documentation reviewed and approved by administrator.',
+                            },
+                            {
+                              id: 'RESUBMISSION_REQUIRED',
+                              label: 'Resubmit',
+                              color: 'bg-amber-500 text-white',
+                              defaultNote: 'Aadhaar document copy is unclear or unmasked. Please upload a clear masked Aadhaar copy.',
+                            },
+                            {
+                              id: 'REJECTED',
+                              label: 'Reject',
+                              color: 'bg-rose-600 text-white',
+                              defaultNote: 'Identity document does not meet verification requirements.',
+                            },
+                          ].map(opt => (
+                            <button
+                              key={opt.id}
+                              type="button"
+                              onClick={() =>
+                                setDocPreviewModal(prev => ({
+                                  ...prev,
+                                  selectedStatus: opt.id as any,
+                                  notes: opt.defaultNote,
+                                }))
+                              }
+                              className={`py-1.5 px-2 rounded-xl text-xs font-bold transition-all ${
+                                docPreviewModal.selectedStatus === opt.id
+                                  ? opt.color + ' shadow-sm'
+                                  : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                              }`}
+                            >
+                              {opt.label}
+                            </button>
+                          ))}
+                        </div>
+
+                        <div>
+                          <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                            Review Notes / Reason (Sent to Worker):
+                          </label>
+                          <textarea
+                            rows={3}
+                            value={docPreviewModal.notes}
+                            onChange={e =>
+                              setDocPreviewModal(prev => ({ ...prev, notes: e.target.value }))
+                            }
+                            placeholder="Specify verification notes or rejection details..."
+                            className="w-full text-xs p-2.5 rounded-xl border border-slate-300 focus:ring-2 focus:ring-brand-500 outline-none"
+                          />
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={handleModalSubmitVerification}
+                          disabled={docPreviewModal.submitting}
+                          className="w-full py-2.5 bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white font-bold text-xs rounded-xl shadow-md transition-all flex items-center justify-center space-x-1.5"
+                        >
+                          <Check className="w-3.5 h-3.5" />
+                          <span>
+                            {docPreviewModal.submitting
+                              ? 'Saving Decision...'
+                              : `Confirm ${docPreviewModal.selectedStatus} for ${docPreviewModal.worker.name || 'Worker'}`}
+                          </span>
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               ) : (
-                <span className="text-xs text-slate-400">Unable to load document preview.</span>
+                <div className="text-center py-12 text-slate-400 text-xs">
+                  Unable to load document preview.
+                </div>
               )}
             </div>
           </div>

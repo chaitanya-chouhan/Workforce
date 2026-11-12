@@ -240,7 +240,12 @@ router.post(
           throw new Error('This worker has not yet completed administrator verification.');
         }
 
-        // 4. Verify OTP cryptographic hash and attempt limits
+        // 4. Fetch task interests for this request (MUST read before any writes)
+        const interestsSnap = await transaction.get(
+          db.collection('taskInterests').where('requestId', '==', requestId)
+        );
+
+        // 5. Verify OTP cryptographic hash and attempt limits
         const otpCheck = verifyOtp(
           otp,
           assignData.otpHash || '',
@@ -259,7 +264,7 @@ router.post(
 
         const now = new Date().toISOString();
 
-        // 5. Update assignment atomically
+        // 6. Update assignment atomically
         transaction.update(assignDoc.ref, {
           status: 'CONFIRMED',
           otpUsedAt: now,
@@ -269,20 +274,36 @@ router.post(
           otpHash: null,
         });
 
-        // 6. Update service request atomically
+        // 7. Update service request atomically
         transaction.update(reqRef, {
           status: 'ASSIGNED',
           assignedWorkerId: workerUid,
           updatedAt: now,
         });
 
-        // 7. Increment worker's active assignment count
+        // 8. Increment worker's active assignment count
         transaction.update(workerRef, {
           activeAssignmentCount: (workerProfile.activeAssignmentCount || 0) + 1,
           updatedAt: now,
         });
 
-        // 8. Add customer notification
+        // 9. Update task interests for this request (accept this worker, reject others)
+        for (const iDoc of interestsSnap.docs) {
+          const iData = iDoc.data();
+          if (iData.workerId === workerUid) {
+            transaction.update(iDoc.ref, {
+              status: 'ACCEPTED',
+              updatedAt: now,
+            });
+          } else {
+            transaction.update(iDoc.ref, {
+              status: 'REJECTED',
+              updatedAt: now,
+            });
+          }
+        }
+
+        // 10. Add customer notification
         const notifRef = db.collection('notifications').doc();
         transaction.set(notifRef, {
           id: notifRef.id,
@@ -301,6 +322,24 @@ router.post(
           workerName: req.user!.name,
         };
       });
+
+      // Mark unread task interest notifications for this request as read
+      try {
+        const notifsSnap = await db
+          .collection('notifications')
+          .where('requestId', '==', requestId)
+          .where('type', '==', 'INTEREST_EXPRESSED')
+          .get();
+        if (!notifsSnap.empty) {
+          const batch = db.batch();
+          for (const nDoc of notifsSnap.docs) {
+            batch.update(nDoc.ref, { read: true, updatedAt: new Date().toISOString() });
+          }
+          await batch.commit();
+        }
+      } catch (nErr) {
+        console.warn('[Verify OTP] Could not mark interest notifications as read:', nErr);
+      }
 
       res.json({
         success: true,

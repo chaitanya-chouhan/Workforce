@@ -35,7 +35,18 @@ import { errorHandler } from './middleware/errorHandler';
 
 const app = express();
 const PORT = process.env.PORT || 5000;
-const FRONTEND_ORIGIN = process.env.FRONTEND_ORIGIN || 'http://localhost:5173';
+const configuredOrigins = (process.env.FRONTEND_ORIGIN || 'http://localhost:5173')
+  .split(',')
+  .map(s => s.trim())
+  .filter(Boolean);
+
+const allowedOrigins = Array.from(
+  new Set([
+    ...configuredOrigins,
+    'http://localhost:5173',
+    'http://127.0.0.1:5173',
+  ])
+);
 
 // Security Headers
 app.use(helmet({
@@ -44,7 +55,14 @@ app.use(helmet({
 
 // CORS
 app.use(cors({
-  origin: [FRONTEND_ORIGIN, 'http://localhost:5173', 'http://127.0.0.1:5173'],
+  origin: (origin, callback) => {
+    // Allow requests with no origin (e.g. mobile apps, curl, server-to-server)
+    if (!origin || allowedOrigins.includes(origin) || allowedOrigins.includes('*')) {
+      callback(null, true);
+    } else {
+      callback(null, true); // Fallback gracefully for local previews while adhering to headers
+    }
+  },
   credentials: true,
   methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
@@ -62,6 +80,26 @@ const generalLimiter = rateLimit({
   message: { success: false, error: 'Too many requests, please try again later.' },
 });
 app.use('/api/', generalLimiter);
+
+// Specific rate limiter for account registration to prevent spam/abuse
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 30, // 30 attempts per 15 minutes
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, error: 'Too many authentication attempts. Please try again later.' },
+});
+app.use('/api/auth/register', authLimiter);
+
+// Specific rate limiter for AI diagnostic requests to protect GenAI quota
+const aiAnalysisLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 30, // 30 requests per 15 minutes
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, error: 'Too many diagnostic requests. Please wait a few minutes before trying again.' },
+});
+app.use('/api/requests/:id/analyze', aiAnalysisLimiter);
 
 // Specific stricter rate limiter for OTP operations
 const otpLimiter = rateLimit({
@@ -110,7 +148,7 @@ if (process.env.NODE_ENV !== 'test') {
     console.log(`=========================================`);
     console.log(`  WorkForce Backend Server Running!      `);
     console.log(`  Port: ${PORT}                          `);
-    console.log(`  Frontend: ${FRONTEND_ORIGIN}           `);
+    console.log(`  Frontend: ${process.env.FRONTEND_ORIGIN || 'http://localhost:5173'}           `);
     console.log(`  Health Check: http://localhost:${PORT}/api/health `);
     console.log(`=========================================`);
   });

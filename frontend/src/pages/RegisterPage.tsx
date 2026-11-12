@@ -50,6 +50,8 @@ export const RegisterPage: React.FC = () => {
 
   // Identity document upload
   const [docFile, setDocFile] = useState<File | null>(null);
+  const [docPreviewUrl, setDocPreviewUrl] = useState<string | null>(null);
+  const [docPreviewType, setDocPreviewType] = useState<'image' | 'pdf' | null>(null);
   const [maskedAadhaar, setMaskedAadhaar] = useState('');
 
   const [loading, setLoading] = useState(false);
@@ -93,9 +95,23 @@ export const RegisterPage: React.FC = () => {
         setError('Only JPEG, PNG, WebP images or PDF files are accepted.');
         return;
       }
+      if (docPreviewUrl) {
+        URL.revokeObjectURL(docPreviewUrl);
+      }
       setDocFile(file);
+      setDocPreviewType(file.type === 'application/pdf' ? 'pdf' : 'image');
+      setDocPreviewUrl(URL.createObjectURL(file));
       setError(null);
     }
+  };
+
+  const handleClearDocFile = () => {
+    if (docPreviewUrl) {
+      URL.revokeObjectURL(docPreviewUrl);
+    }
+    setDocFile(null);
+    setDocPreviewUrl(null);
+    setDocPreviewType(null);
   };
 
   const handleRegister = async (e: React.FormEvent) => {
@@ -477,23 +493,53 @@ export const RegisterPage: React.FC = () => {
                   </p>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-center">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-start">
                   <div>
                     <label className="block text-xs font-semibold text-slate-700 mb-1">
                       Upload Aadhaar / Govt ID (JPEG/PNG/PDF &le;5MB)
                     </label>
-                    <label className="border-2 border-dashed border-slate-300 hover:border-brand-500 rounded-xl p-3 flex flex-col items-center justify-center cursor-pointer bg-white transition-colors">
-                      <Upload className="w-5 h-5 text-slate-400 mb-1" />
-                      <span className="text-xs text-slate-600 text-center">
-                        {docFile ? docFile.name : 'Click to select document'}
-                      </span>
-                      <input
-                        type="file"
-                        onChange={handleFileChange}
-                        accept="image/jpeg,image/png,image/webp,application/pdf"
-                        className="hidden"
-                      />
-                    </label>
+                    {!docFile ? (
+                      <label className="border-2 border-dashed border-slate-300 hover:border-brand-500 rounded-xl p-3 flex flex-col items-center justify-center cursor-pointer bg-white transition-colors">
+                        <Upload className="w-5 h-5 text-slate-400 mb-1" />
+                        <span className="text-xs text-slate-600 text-center">
+                          Click to select document
+                        </span>
+                        <input
+                          type="file"
+                          onChange={handleFileChange}
+                          accept="image/jpeg,image/png,image/webp,application/pdf"
+                          className="hidden"
+                        />
+                      </label>
+                    ) : (
+                      <div className="bg-white border border-slate-200 rounded-xl p-2.5 space-y-2">
+                        {docPreviewType === 'image' && docPreviewUrl && (
+                          <div className="rounded-lg overflow-hidden border border-slate-100 bg-slate-50 p-1 flex justify-center">
+                            <img
+                              src={docPreviewUrl}
+                              alt="ID Preview"
+                              className="max-h-28 rounded object-contain"
+                            />
+                          </div>
+                        )}
+                        {docPreviewType === 'pdf' && (
+                          <div className="flex items-center space-x-2 py-1">
+                            <FileText className="w-6 h-6 text-rose-500 shrink-0" />
+                            <span className="text-xs font-bold text-slate-800 truncate">{docFile.name}</span>
+                          </div>
+                        )}
+                        <div className="flex items-center justify-between text-xs pt-1 border-t border-slate-100">
+                          <span className="text-slate-500 truncate max-w-[140px]">{docFile.name}</span>
+                          <button
+                            type="button"
+                            onClick={handleClearDocFile}
+                            className="text-xs text-rose-600 font-bold hover:underline"
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   <div>

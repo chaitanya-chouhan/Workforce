@@ -5,7 +5,7 @@ import { getDb } from '../config/firebase';
 import { authenticateToken } from '../middleware/authMiddleware';
 import { requireActiveAccount } from '../middleware/roleMiddleware';
 import { Complaint, ComplaintStatus, User, ServiceRequest } from '../types';
-import { uploadComplaintEvidence } from '../config/storage';
+import { uploadComplaintEvidence, verifyFileSignature, removePrivateFile } from '../config/storage';
 
 const router = Router();
 
@@ -51,7 +51,18 @@ router.post(
       }
 
       if (!description || description.length < 10) {
+        if (req.file) removePrivateFile(req.file.path);
         res.status(400).json({ success: false, error: 'Complaint description must be at least 10 characters' });
+        return;
+      }
+
+      // Verify file signature if evidence was uploaded
+      if (req.file && !verifyFileSignature(req.file.path, req.file.mimetype)) {
+        removePrivateFile(req.file.path);
+        res.status(400).json({
+          success: false,
+          error: 'Uploaded evidence file content does not match its expected format. Please attach a valid JPEG, PNG, WebP image or PDF document.',
+        });
         return;
       }
 
@@ -200,8 +211,9 @@ router.get('/:id/evidence', authenticateToken, async (req: Request, res: Respons
       return;
     }
 
+    const safeFileName = (complaint.evidenceFileName || 'evidence').replace(/[^a-zA-Z0-9._-]/g, '_');
     res.setHeader('Content-Type', complaint.evidenceMimeType || 'application/octet-stream');
-    res.setHeader('Content-Disposition', `inline; filename="${complaint.evidenceFileName || 'evidence'}"`);
+    res.setHeader('Content-Disposition', `inline; filename="${safeFileName}"`);
     res.sendFile(complaint.evidenceStoragePath);
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message });

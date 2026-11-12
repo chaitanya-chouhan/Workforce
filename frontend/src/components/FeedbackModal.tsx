@@ -28,7 +28,7 @@ const REVIEW_CHOICES: ReviewChoice[] = [
     stars: 5,
     emoji: '🌟',
     description: 'Flawless work & highly professional',
-    activeClass: 'border-emerald-500 bg-emerald-50/80 text-emerald-950 ring-2 ring-emerald-500 shadow-sm',
+    activeClass: 'border-emerald-500 bg-emerald-950/50 text-emerald-300 ring-1 ring-emerald-500 shadow-sm',
   },
   {
     value: 'good',
@@ -36,7 +36,7 @@ const REVIEW_CHOICES: ReviewChoice[] = [
     stars: 4,
     emoji: '👍',
     description: 'Well executed, satisfied with job',
-    activeClass: 'border-blue-500 bg-blue-50/80 text-blue-950 ring-2 ring-blue-500 shadow-sm',
+    activeClass: 'border-[#FF6A00] bg-[#FF6A00]/20 text-[#FF9A3C] ring-1 ring-[#FF6A00] shadow-sm',
   },
   {
     value: 'ok',
@@ -44,7 +44,7 @@ const REVIEW_CHOICES: ReviewChoice[] = [
     stars: 3,
     emoji: '👌',
     description: 'Acceptable service, average experience',
-    activeClass: 'border-amber-500 bg-amber-50/80 text-amber-950 ring-2 ring-amber-500 shadow-sm',
+    activeClass: 'border-amber-500 bg-amber-950/50 text-amber-300 ring-1 ring-amber-500 shadow-sm',
   },
   {
     value: 'bad',
@@ -52,7 +52,7 @@ const REVIEW_CHOICES: ReviewChoice[] = [
     stars: 2,
     emoji: '👎',
     description: 'Subpar work, several issues observed',
-    activeClass: 'border-orange-500 bg-orange-50/80 text-orange-950 ring-2 ring-orange-500 shadow-sm',
+    activeClass: 'border-orange-500 bg-orange-950/50 text-orange-300 ring-1 ring-orange-500 shadow-sm',
   },
   {
     value: 'very bad',
@@ -60,7 +60,7 @@ const REVIEW_CHOICES: ReviewChoice[] = [
     stars: 1,
     emoji: '⚠️',
     description: 'Unacceptable quality or conduct',
-    activeClass: 'border-red-500 bg-red-50/80 text-red-950 ring-2 ring-red-500 shadow-sm',
+    activeClass: 'border-red-500 bg-red-950/50 text-red-300 ring-1 ring-red-500 shadow-sm',
   },
 ];
 
@@ -117,37 +117,37 @@ export const FeedbackModal: React.FC<FeedbackModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
-      <div className="bg-white rounded-3xl max-w-lg w-full shadow-2xl border border-slate-100 overflow-hidden flex flex-col max-h-[90vh]">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fadeIn">
+      <div className="bg-[#171B20] rounded-3xl max-w-lg w-full shadow-2xl border border-[#272D34] overflow-hidden flex flex-col max-h-[90vh]">
         {/* Header */}
-        <div className="bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 p-6 text-white text-center relative shrink-0">
+        <div className="bg-[#090B0E] border-b border-[#272D34] p-6 text-center relative shrink-0">
           <button
             onClick={onClose}
-            className="absolute top-4 right-4 text-white/80 hover:text-white p-1 rounded-full hover:bg-white/10 transition-colors"
+            className="absolute top-4 right-4 text-[#8A94A6] hover:text-[#E7EAEE] p-1.5 rounded-xl hover:bg-[#171B20] transition-colors"
           >
             <X className="w-5 h-5" />
           </button>
-          <div className="w-12 h-12 rounded-2xl bg-white/20 backdrop-blur-md flex items-center justify-center mx-auto mb-2">
-            <Star className="w-6 h-6 text-white fill-white" />
+          <div className="w-12 h-12 rounded-2xl bg-[#FF6A00] flex items-center justify-center mx-auto mb-2 text-black shadow-[0_0_15px_rgba(255,106,0,0.3)]">
+            <Star className="w-6 h-6 fill-black" />
           </div>
-          <h3 className="font-black text-lg tracking-tight">Rate Your Service Experience</h3>
-          <p className="text-xs text-white/90">
+          <h3 className="font-black text-lg tracking-tight text-[#E7EAEE]">Rate Your Service Experience</h3>
+          <p className="text-xs text-[#8A94A6]">
             Your review updates the technician's community rating in real time
           </p>
         </div>
 
         {/* Content Body */}
         <div className="p-6 space-y-5 overflow-y-auto">
-          <div className="text-center space-y-0.5 border-b border-slate-100 pb-3">
-            <p className="font-extrabold text-sm text-slate-900">{displayName}</p>
-            <p className="text-xs text-slate-500 truncate">For task: "{requestTitle}"</p>
+          <div className="text-center space-y-0.5 border-b border-[#272D34] pb-3">
+            <p className="font-extrabold text-sm text-[#E7EAEE]">{displayName}</p>
+            <p className="text-xs text-[#8A94A6] truncate">For task: "{requestTitle}"</p>
           </div>
 
           {success ? (
-            <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-6 text-center space-y-2 animate-fadeIn">
-              <CheckCircle2 className="w-10 h-10 text-emerald-600 mx-auto" />
-              <h4 className="font-bold text-sm text-emerald-950">Review Recorded Successfully!</h4>
-              <p className="text-xs text-emerald-800">
+            <div className="bg-emerald-950/40 border border-emerald-800/60 rounded-2xl p-6 text-center space-y-2 animate-fadeIn">
+              <CheckCircle2 className="w-10 h-10 text-emerald-400 mx-auto" />
+              <h4 className="font-bold text-sm text-emerald-300">Review Recorded Successfully!</h4>
+              <p className="text-xs text-emerald-400/80">
                 Thank you! The worker's average rating has been updated and reflected across WorkForce.
               </p>
             </div>
@@ -155,7 +155,7 @@ export const FeedbackModal: React.FC<FeedbackModalProps> = ({
             <form onSubmit={handleSubmit} className="space-y-4">
               {/* Review Option Selectors (good, bad, ok, very bad, very good) */}
               <div>
-                <label className="block text-xs font-bold text-slate-800 mb-2">
+                <label className="block text-xs font-bold text-[#E7EAEE] mb-2">
                   Select Your Review Rating:
                 </label>
                 <div className="grid grid-cols-1 sm:grid-cols-5 gap-2">
@@ -169,7 +169,7 @@ export const FeedbackModal: React.FC<FeedbackModalProps> = ({
                         className={`p-2.5 rounded-2xl border text-center transition-all flex flex-col items-center justify-center gap-1 ${
                           isSelected
                             ? choice.activeClass
-                            : 'border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700'
+                            : 'border-[#272D34] bg-[#090B0E] hover:bg-[#272D34] text-[#8A94A6]'
                         }`}
                       >
                         <span className="text-lg">{choice.emoji}</span>
@@ -185,14 +185,14 @@ export const FeedbackModal: React.FC<FeedbackModalProps> = ({
                     );
                   })}
                 </div>
-                <p className="text-[11px] text-slate-500 mt-2 text-center">
-                  Selected Rating: <strong className="capitalize text-slate-800">{currentChoice.label}</strong> ({currentChoice.description})
+                <p className="text-[11px] text-[#8A94A6] mt-2 text-center">
+                  Selected Rating: <strong className="capitalize text-[#FF9A3C]">{currentChoice.label}</strong> ({currentChoice.description})
                 </p>
               </div>
 
               {/* Review Comment (Optional) */}
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                <label className="block text-xs font-semibold text-[#8A94A6] mb-1">
                   Comments & Feedback (Optional)
                 </label>
                 <textarea
@@ -200,13 +200,13 @@ export const FeedbackModal: React.FC<FeedbackModalProps> = ({
                   value={comment}
                   onChange={e => setComment(e.target.value)}
                   placeholder="Share details about punctuality, problem resolution, and fairness of charges..."
-                  className="w-full text-xs p-3 rounded-2xl border border-slate-300 focus:ring-2 focus:ring-amber-500 outline-none transition-all placeholder:text-slate-400"
+                  className="w-full text-xs p-3 rounded-2xl bg-[#090B0E] border border-[#272D34] text-[#E7EAEE] focus:border-[#FF6A00] focus:ring-1 focus:ring-[#FF6A00] outline-none transition-all placeholder:text-[#657080]"
                 />
               </div>
 
               {error && (
-                <div className="bg-red-50 border border-red-200 rounded-2xl p-3 text-xs text-red-700 flex items-start space-x-2">
-                  <AlertCircle className="w-4 h-4 shrink-0 text-red-500 mt-0.5" />
+                <div className="bg-red-950/40 border border-red-800/60 rounded-2xl p-3 text-xs text-red-300 flex items-start space-x-2">
+                  <AlertCircle className="w-4 h-4 shrink-0 text-red-400 mt-0.5" />
                   <span>{error}</span>
                 </div>
               )}
@@ -215,14 +215,14 @@ export const FeedbackModal: React.FC<FeedbackModalProps> = ({
                 <button
                   type="button"
                   onClick={onClose}
-                  className="flex-1 py-2.5 rounded-xl border border-slate-300 text-slate-700 text-xs font-semibold hover:bg-slate-50 transition-colors"
+                  className="flex-1 py-2.5 rounded-xl border border-[#272D34] text-[#E7EAEE] text-xs font-semibold hover:bg-[#272D34] transition-colors"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={loading}
-                  className="flex-1 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-white text-xs font-bold transition-all shadow-md shadow-amber-500/20"
+                  className="flex-1 py-2.5 rounded-xl bg-[#FF6A00] hover:bg-[#FF9A3C] disabled:opacity-40 text-black text-xs font-bold transition-all shadow-sm"
                 >
                   {loading ? 'Submitting Review...' : 'Submit Feedback'}
                 </button>

@@ -4,25 +4,25 @@ import { Wrench, Shield, Sparkles, Heart } from 'lucide-react';
 
 export const Footer: React.FC = () => {
   return (
-    <footer className="bg-slate-900 text-slate-400 text-sm mt-auto border-t border-slate-800">
+    <footer className="bg-[#090B0E] text-[#8A94A6] text-sm mt-auto border-t border-[#272D34]">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
         <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
           {/* Brand */}
           <div className="space-y-4 md:col-span-1">
-            <div className="flex items-center space-x-2 text-white">
-              <div className="w-8 h-8 rounded-lg bg-brand-500 flex items-center justify-center">
-                <Wrench className="w-4 h-4 text-white" />
+            <div className="flex items-center space-x-2 text-[#E7EAEE]">
+              <div className="w-8 h-8 rounded-xl bg-[#FF6A00] flex items-center justify-center text-black shadow-[0_0_12px_rgba(255,106,0,0.3)]">
+                <Wrench className="w-4 h-4 text-black" />
               </div>
               <span className="font-bold text-lg tracking-tight">WorkForce</span>
             </div>
-            <p className="text-xs text-slate-400 leading-relaxed">
+            <p className="text-xs text-[#8A94A6] leading-relaxed">
               AI-Powered local service platform connecting households with verified tradespeople using Google Gemma 4 and Firebase.
             </p>
-            <div className="flex items-center space-x-2 text-xs text-slate-400">
-              <span className="inline-flex items-center px-2 py-0.5 rounded bg-slate-800 text-slate-300">
-                <Sparkles className="w-3 h-3 text-amber-400 mr-1" /> Gemma 4
+            <div className="flex items-center space-x-2 text-xs">
+              <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-[#171B20] text-[#FF9A3C] border border-[#FF6A00]/25">
+                <Sparkles className="w-3 h-3 text-[#FF6A00] mr-1" /> Gemma 4
               </span>
-              <span className="inline-flex items-center px-2 py-0.5 rounded bg-slate-800 text-slate-300">
+              <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-[#171B20] text-[#E7EAEE] border border-[#272D34]">
                 <Shield className="w-3 h-3 text-emerald-400 mr-1" /> Firebase Spark
               </span>
             </div>
@@ -30,20 +30,20 @@ export const Footer: React.FC = () => {
 
           {/* Quick Links */}
           <div>
-            <h4 className="text-white font-semibold text-xs uppercase tracking-wider mb-4">Platform</h4>
+            <h4 className="text-[#E7EAEE] font-semibold text-xs uppercase tracking-wider mb-4">Platform</h4>
             <ul className="space-y-2.5 text-xs">
-              <li><Link to="/how-it-works" className="hover:text-white transition-colors">How It Works</Link></li>
-              <li><Link to="/about" className="hover:text-white transition-colors">About Gemma 4 & Architecture</Link></li>
-              <li><Link to="/register" className="hover:text-white transition-colors">Become a Service Provider</Link></li>
-              <li><Link to="/register" className="hover:text-white transition-colors">Request a Household Repair</Link></li>
-              <li><Link to="/admin/login" className="hover:text-white transition-colors text-slate-400">Administrator Console</Link></li>
+              <li><Link to="/how-it-works" className="hover:text-[#FF6A00] transition-colors">How It Works</Link></li>
+              <li><Link to="/about" className="hover:text-[#FF6A00] transition-colors">About Gemma 4 & Architecture</Link></li>
+              <li><Link to="/register" className="hover:text-[#FF6A00] transition-colors">Become a Service Provider</Link></li>
+              <li><Link to="/register" className="hover:text-[#FF6A00] transition-colors">Request a Household Repair</Link></li>
+              <li><Link to="/admin/login" className="hover:text-[#FF6A00] transition-colors text-[#8A94A6]">Administrator Console</Link></li>
             </ul>
           </div>
 
           {/* Supported Services */}
           <div>
-            <h4 className="text-white font-semibold text-xs uppercase tracking-wider mb-4">Core Trades</h4>
-            <ul className="space-y-2.5 text-xs">
+            <h4 className="text-[#E7EAEE] font-semibold text-xs uppercase tracking-wider mb-4">Core Trades</h4>
+            <ul className="space-y-2.5 text-xs text-[#8A94A6]">
               <li>Plumbing & Leak Repairs</li>
               <li>Electrical & Wiring Maintenance</li>
               <li>Carpentry & Door Hardware</li>
@@ -54,17 +54,17 @@ export const Footer: React.FC = () => {
 
           {/* Safety & Legal Disclaimer */}
           <div>
-            <h4 className="text-white font-semibold text-xs uppercase tracking-wider mb-4">Safety Guarantee</h4>
-            <p className="text-xs text-slate-400 leading-relaxed">
+            <h4 className="text-[#E7EAEE] font-semibold text-xs uppercase tracking-wider mb-4">Safety Guarantee</h4>
+            <p className="text-xs text-[#8A94A6] leading-relaxed">
               AI diagnoses provided by Gemma 4 are preliminary possibilities, not guaranteed conclusions. Always inspect the problem on site. Suspected gas leaks and active electrical hazards require immediate emergency isolation.
             </p>
           </div>
         </div>
 
-        <div className="border-t border-slate-800 mt-8 pt-8 flex flex-col sm:flex-row items-center justify-between text-xs text-slate-500">
+        <div className="border-t border-[#272D34] mt-8 pt-8 flex flex-col sm:flex-row items-center justify-between text-xs text-[#8A94A6]">
           <p>© {new Date().getFullYear()} WorkForce. Built with Firebase and Google Gemma 4.</p>
           <p className="mt-2 sm:mt-0 flex items-center">
-            Designed for local community empowerments
+            Designed for local community empowerment
           </p>
         </div>
       </div>

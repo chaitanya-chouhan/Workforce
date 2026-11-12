@@ -129,6 +129,12 @@ export const api = {
   getNotifications: () => request('/notifications'),
   markNotificationRead: (id: string) =>
     request(`/notifications/${id}/read`, { method: 'PATCH' }),
+  // Delete a single notification
+  deleteNotification: (id: string) =>
+    request(`/notifications/${id}`, { method: 'DELETE' }),
+  // Clear all notifications for the current user
+  clearAllNotifications: () =>
+    request('/notifications', { method: 'DELETE' }),
 
   // Worker Identity Document
   uploadIdentityDocument: (formData: FormData) =>
